@@ -1,0 +1,3881 @@
+---
+title: "食材パターン出現比率は一定か？"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    df-print: paged
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+library(tidyverse)
+library(lubridate)
+library(scales)
+library(showtext)
+library(googlesheets4)
+
+knitr::opts_chunk$set(
+  fig.width = 12,
+  fig.height = 7,
+  dpi = 120
+)
+
+# Google Fontsから日本語フォント（Noto Sans JPなど）を追加
+font_add_google("Noto Sans JP", "noto")
+
+# showtextを有効化（これ以降の描画で適用される）
+showtext_auto()
+
+gs4_auth()
+```
+
+# データ
+
+## データ読み込み
+
+```{r}
+#| label: load-data
+
+sheet_url <- "SPREADSHEET_URL_REMOVED_BEFORE_PUBLICATION"
+
+df_org <- read_sheet(sheet_url,
+  sheet = "記録一覧"
+                     )
+
+glimpse(df_org)
+```
+
+```{r}
+df <- df_org %>%
+  filter(is.na(`収集開始前分`)) %>%
+  filter(is.na(`2枠種フラグ`))
+```
+
+## 基本集計
+
+# 食材パターンの推移
+
+## 月次比率
+
+```{r}
+df_month <- df %>%
+  mutate(月 = floor_date(as.Date(日付), unit = "month"))
+  # filter(月 >= as.Date("2025-12-01")) # 計測開始が2025-11-17からのため、12月開始とする
+
+# Prepare data for stacked bar chart (counts)
+counts_all_pattern <- df_month %>%
+  # 1. まずは存在するデータだけでカウント
+  group_by(月, `食材パターン`) %>%
+  summarise(count = n(), .groups = 'drop') %>%
+
+  # 2. 全ての「月」と「食材パターン」の組み合わせを生成し、無い所を0で埋める
+  complete(月, `食材パターン`, fill = list(count = 0)) %>%
+
+  # 3. 0埋めした状態で、月ごとの比率を計算し直す
+  group_by(月) %>%
+  mutate(ratio = count / sum(count)) %>%
+  ungroup()
+
+# Draw stacked bar chart of counts
+print(ggplot(counts_all_pattern, aes(x = 月, y = count, fill = `食材パターン`)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Monthly Counts of Ingredient Patterns",
+       x = "Month",
+       y = "Count",
+       fill = "食材パターン") +
+  theme_minimal())
+
+# Draw line chart of ratios (using previously calculated ratio_3枠目)
+print(ggplot(counts_all_pattern, aes(x = 月, y = ratio, color = `食材パターン`)) +
+  geom_line(linewidth = 1) + # Reverting to size
+  geom_hline(yintercept = c(1/9, 2/9), linetype = "dashed") +
+  geom_point(size = 2) + # Reverting to size
+  labs(title = "Monthly Ratio of Ingredient Patterns",
+       x = "Month",
+       y = "Ratio",
+       color = "食材パターン") +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 0.4)) + # Y軸を%表記に
+  theme_minimal())
+
+```
+
+## ローリング30日比率
+
+## 2枠目
+
+## 3枠目
+
+## 条件付き3枠目比率
+
+# i.i.d. 仮説の検証
+
+## 累積偏差
+
+```{r}
+patterns <- c("AAA", "AAB", "AAC", "ABA", "ABB", "ABC")
+
+expected_prob <- tibble(
+  `食材パターン` = patterns,
+  q = c(1/9, 1/9, 1/9, 2/9, 2/9, 2/9)
+)
+
+# 日ごと・食材パターンごとの件数
+daily_pattern <- df %>%
+  arrange(`日付`) %>%
+  count(`日付`, `食材パターン`, name = "n") %>%
+  complete(
+    `日付` = seq(min(`日付`), max(`日付`), by = "day"),
+    `食材パターン` = patterns,
+    fill = list(n = 0)
+  )
+
+# 日ごとの全観測数と累積観測数
+daily_total <- daily_pattern %>%
+  group_by(`日付`) %>%
+  summarise(
+    daily_n = sum(n),
+    .groups = "drop"
+  ) %>%
+  arrange(`日付`) %>%
+  mutate(
+    cum_total = cumsum(daily_n)
+  )
+
+# 各食材パターンの累積実測数 - 累積期待数
+cum_deviation <- daily_pattern %>%
+  group_by(`食材パターン`) %>%
+  arrange(`日付`, .by_group = TRUE) %>%
+  mutate(
+    cum_n = cumsum(n)
+  ) %>%
+  ungroup() %>%
+  left_join(daily_total, by = "日付") %>%
+  left_join(expected_prob, by = "食材パターン") %>%
+  mutate(
+    expected_n = cum_total * q,
+    deviation = cum_n - expected_n
+  )
+
+options(
+  repr.plot.width = 14,
+  repr.plot.height = 7
+)
+
+ggplot(
+  cum_deviation,
+  aes(
+    x = `日付`,
+    y = deviation,
+    color = `食材パターン`
+  )
+) +
+  geom_line() +
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed"
+  ) +
+  theme_minimal() +
+  labs(
+    title = "食材パターンの累積期待値からの偏差",
+    subtitle = "期待比率 AAA:AAB:AAC:ABA:ABB:ABC = 1:1:1:2:2:2",
+    x = "日付",
+    y = "実測累積数 - 期待累積数",
+    color = "食材パターン"
+  )
+```
+
+## Monte Carlo
+
+```{r}
+
+
+# ============================================
+# 設定
+# ============================================
+
+patterns <- c("AAA", "AAB", "AAC", "ABA", "ABB", "ABC")
+
+q <- c(
+  AAA = 1/9,
+  AAB = 1/9,
+  AAC = 1/9,
+  ABA = 2/9,
+  ABB = 2/9,
+  ABC = 2/9
+)
+
+nsim <- 10000
+min_n <- 30   # 累積30件以降を検定対象にする
+
+set.seed(12345)
+
+
+# ============================================
+# 分析対象データ
+# ============================================
+
+# 収集開始前のデータを除外
+# すでに df 側で除外しているなら、この部分は df_analysis <- df でOK
+df_analysis <- df %>%
+  filter(
+    is.na(`収集開始前分`) |
+      `収集開始前分` != 1
+  ) %>%
+  arrange(`日付`)
+
+
+# ============================================
+# 日別件数
+# ============================================
+
+all_dates <- seq(
+  min(df_analysis$`日付`),
+  max(df_analysis$`日付`),
+  by = "day"
+)
+
+daily_total <- df_analysis %>%
+  count(`日付`, name = "daily_n") %>%
+  complete(
+    `日付` = all_dates,
+    fill = list(daily_n = 0)
+  ) %>%
+  arrange(`日付`) %>%
+  mutate(
+    cum_total = cumsum(daily_n)
+  )
+
+
+# ============================================
+# 実データの累積偏差
+# ============================================
+
+obs_daily <- df_analysis %>%
+  count(`日付`, `食材パターン`, name = "n") %>%
+  complete(
+    `日付` = all_dates,
+    `食材パターン` = patterns,
+    fill = list(n = 0)
+  ) %>%
+  group_by(`食材パターン`) %>%
+  arrange(`日付`, .by_group = TRUE) %>%
+  mutate(
+    cum_n = cumsum(n)
+  ) %>%
+  ungroup() %>%
+  left_join(
+    daily_total,
+    by = "日付"
+  ) %>%
+  mutate(
+    q = unname(q[`食材パターン`]),
+    expected_n = cum_total * q,
+    deviation = cum_n - expected_n,
+
+    # i.i.d.なら、その時点での累積件数の標準偏差
+    sd_iid = sqrt(cum_total * q * (1 - q))
+  )
+
+
+# ============================================
+# 実データの検定統計量
+# ============================================
+
+obs_matrix <- obs_daily %>%
+  select(`日付`, `食材パターン`, deviation) %>%
+  pivot_wider(
+    names_from = `食材パターン`,
+    values_from = deviation
+  ) %>%
+  arrange(`日付`)
+
+cum_total <- daily_total$cum_total
+
+valid <- cum_total >= min_n
+
+sd_matrix <- outer(
+  cum_total,
+  q,
+  FUN = function(n, p) {
+    sqrt(n * p * (1 - p))
+  }
+)
+
+colnames(sd_matrix) <- patterns
+
+dev_matrix <- as.matrix(
+  obs_matrix[, patterns]
+)
+
+z_obs <- dev_matrix / sd_matrix
+
+
+# 1. どこか1点でも極端な偏差が出たか
+T_max_obs <- max(
+  abs(z_obs[valid, ]),
+  na.rm = TRUE
+)
+
+
+# 2. 長期間にわたり偏り続けているか
+#    （標準化偏差の二乗平均）
+T_area_obs <- mean(
+  rowSums(
+    z_obs[valid, ]^2
+  ),
+  na.rm = TRUE
+)
+
+
+# ============================================
+# Monte Carlo simulation
+# ============================================
+
+# 各 simulation の累積件数
+cum_counts <- matrix(
+  0,
+  nrow = nsim,
+  ncol = length(patterns)
+)
+
+colnames(cum_counts) <- patterns
+
+T_max_sim <- rep(0, nsim)
+T_area_sum <- rep(0, nsim)
+
+n_valid_days <- 0
+
+
+for (d in seq_len(nrow(daily_total))) {
+
+  n_today <- daily_total$daily_n[d]
+
+  # その日の観測数だけ、i.i.d.で抽選
+  if (n_today > 0) {
+
+    draw <- t(
+      rmultinom(
+        n = nsim,
+        size = n_today,
+        prob = q
+      )
+    )
+
+    cum_counts <- cum_counts + draw
+  }
+
+  n_cum <- daily_total$cum_total[d]
+
+  if (n_cum >= min_n) {
+
+    mu <- n_cum * q
+
+    sd <- sqrt(
+      n_cum * q * (1 - q)
+    )
+
+    z <- sweep(
+      cum_counts,
+      2,
+      mu,
+      FUN = "-"
+    )
+
+    z <- sweep(
+      z,
+      2,
+      sd,
+      FUN = "/"
+    )
+
+    # 最大偏差
+    T_max_sim <- pmax(
+      T_max_sim,
+      apply(abs(z), 1, max)
+    )
+
+    # 持続的偏差
+    T_area_sum <- T_area_sum +
+      rowSums(z^2)
+
+    n_valid_days <- n_valid_days + 1
+  }
+}
+
+T_area_sim <- T_area_sum / n_valid_days
+
+
+# ============================================
+# Monte Carlo p-value
+# ============================================
+
+p_max <- (
+  sum(T_max_sim >= T_max_obs) + 1
+) / (
+  nsim + 1
+)
+
+p_area <- (
+  sum(T_area_sim >= T_area_obs) + 1
+) / (
+  nsim + 1
+)
+
+cat(
+  "T_max =", T_max_obs,
+  "\nMonte Carlo p-value =", p_max,
+  "\n\n"
+)
+
+cat(
+  "T_area =", T_area_obs,
+  "\nMonte Carlo p-value =", p_area,
+  "\n"
+)
+
+```
+
+```{r}
+# ============================================
+# 95% simultaneous band
+# ============================================
+
+critical_95 <- quantile(
+  T_max_sim,
+  probs = 0.95
+)
+
+plot_data <- obs_daily %>%
+  mutate(
+    lower_95 = if_else(
+      cum_total >= min_n,
+      -critical_95 * sd_iid,
+      NA_real_
+    ),
+    upper_95 = if_else(
+      cum_total >= min_n,
+      critical_95 * sd_iid,
+      NA_real_
+    )
+  )
+
+
+options(
+  repr.plot.width = 14,
+  repr.plot.height = 9
+)
+
+
+ggplot(
+  plot_data,
+  aes(
+    x = `日付`,
+    y = deviation
+  )
+) +
+  geom_ribbon(
+    aes(
+      ymin = lower_95,
+      ymax = upper_95,
+      fill = `食材パターン`
+    ),
+    alpha = 0.15,
+    color = NA
+  ) +
+  geom_line(
+    aes(
+      color = `食材パターン`
+    ),
+    linewidth = 0.7
+  ) +
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed"
+  ) +
+  facet_wrap(
+    ~ `食材パターン`,
+    ncol = 3
+  ) +
+  guides(
+    fill = "none",
+    color = "none"
+  ) +
+  theme_minimal() +
+  labs(
+    title = "食材パターンの累積偏差と i.i.d. 95%同時信頼帯",
+    subtitle = "帰無仮説: AAA:AAB:AAC:ABA:ABB:ABC = 1:1:1:2:2:2 の独立抽選",
+    x = "日付",
+    y = "実測累積数 - 期待累積数"
+  )
+```
+
+```{r}
+# T_max
+ggplot(
+  tibble(T_max = T_max_sim),
+  aes(x = T_max)
+) +
+  geom_histogram(
+    bins = 50
+  ) +
+  geom_vline(
+    xintercept = T_max_obs,
+    linetype = "dashed",
+    linewidth = 1
+  ) +
+  theme_minimal() +
+  labs(
+    title = "i.i.d.モデル下の最大累積偏差",
+    subtitle = paste0(
+      "Monte Carlo p = ",
+      signif(p_max, 3)
+    ),
+    x = "最大標準化累積偏差",
+    y = "Simulation count"
+  )
+```
+
+```{r}
+# T_area
+ggplot(
+  tibble(T_area = T_area_sim),
+  aes(x = T_area)
+) +
+  geom_histogram(
+    bins = 50
+  ) +
+  geom_vline(
+    xintercept = T_area_obs,
+    linetype = "dashed",
+    linewidth = 1
+  ) +
+  theme_minimal() +
+  labs(
+    title = "i.i.d.モデル下の累積的な偏り",
+    subtitle = paste0(
+      "Monte Carlo p = ",
+      signif(p_area, 3)
+    ),
+    x = "標準化累積偏差の二乗平均",
+    y = "Simulation count"
+  )
+```
+
+## 帳尻合わせモデル
+
+```{r}
+
+
+# ============================================
+# 設定
+# ============================================
+
+patterns <- c("AAA", "AAB", "AAC", "ABA", "ABB", "ABC")
+
+q <- c(
+  AAA = 1/9,
+  AAB = 1/9,
+  AAC = 1/9,
+  ABA = 2/9,
+  ABB = 2/9,
+  ABC = 2/9
+)
+
+
+# ============================================
+# 分析対象データ
+# ============================================
+
+# 収集開始前分を除外
+df_analysis <- df %>%
+  mutate(.orig_order = row_number()) %>%
+  filter(
+    is.na(`収集開始前分`) |
+      `収集開始前分` != 1
+  ) %>%
+  arrange(`日付`, .orig_order)
+
+obs <- df_analysis$`食材パターン`
+
+N <- length(obs)
+
+obs_idx <- match(obs, patterns)
+
+
+# ============================================
+# 各時点の「直前までの累積偏差」D を作る
+# ============================================
+
+Dmat <- matrix(
+  0,
+  nrow = N,
+  ncol = length(patterns)
+)
+
+colnames(Dmat) <- patterns
+
+counts <- setNames(
+  rep(0, length(patterns)),
+  patterns
+)
+
+for (t in seq_len(N)) {
+
+  # t番目の観測の「直前」までの偏差
+  Dmat[t, ] <- counts - (t - 1) * q
+
+  # t番目の結果を追加
+  counts[obs[t]] <- counts[obs[t]] + 1
+}
+
+
+# ============================================
+# softmax / log-likelihood
+# ============================================
+
+loglik_beta <- function(beta) {
+
+  eta <- matrix(
+    log(q),
+    nrow = N,
+    ncol = length(patterns),
+    byrow = TRUE
+  ) - beta * Dmat
+
+  # log-sum-exp
+  eta_max <- apply(eta, 1, max)
+
+  log_denom <- eta_max +
+    log(
+      rowSums(
+        exp(eta - eta_max)
+      )
+    )
+
+  log_prob_obs <- eta[
+    cbind(
+      seq_len(N),
+      obs_idx
+    )
+  ] - log_denom
+
+  sum(log_prob_obs)
+}
+
+
+# ============================================
+# beta の最尤推定
+# ============================================
+
+fit <- optim(
+  par = 0,
+  fn = function(beta) {
+    -loglik_beta(beta)
+  },
+  method = "BFGS",
+  hessian = TRUE
+)
+
+beta_hat <- unname(fit$par)
+
+ll_hat <- loglik_beta(beta_hat)
+ll_0   <- loglik_beta(0)
+
+se_beta <- sqrt(
+  1 / fit$hessian[1, 1]
+)
+
+z_beta <- beta_hat / se_beta
+
+ci_lower <- beta_hat - 1.96 * se_beta
+ci_upper <- beta_hat + 1.96 * se_beta
+
+
+# ============================================
+# 検定
+# ============================================
+
+# Wald: 両側
+p_wald_two <- 2 * pnorm(
+  abs(z_beta),
+  lower.tail = FALSE
+)
+
+# Wald: 帳尻合わせ beta > 0 の片側検定
+p_wald_one <- pnorm(
+  z_beta,
+  lower.tail = FALSE
+)
+
+# 尤度比検定
+LR <- 2 * (ll_hat - ll_0)
+
+p_LR <- pchisq(
+  LR,
+  df = 1,
+  lower.tail = FALSE
+)
+
+
+# ============================================
+# 結果
+# ============================================
+
+result <- tibble(
+  beta_hat = beta_hat,
+  SE = se_beta,
+  CI_lower = ci_lower,
+  CI_upper = ci_upper,
+  z = z_beta,
+  p_Wald_two_sided = p_wald_two,
+  p_Wald_beta_gt_0 = p_wald_one,
+  logLik_beta_hat = ll_hat,
+  logLik_beta_0 = ll_0,
+  LR = LR,
+  p_LR = p_LR,
+  weight_ratio_per_1_deficit = exp(beta_hat)
+)
+
+result
+```
+
+```{r}
+beta_grid <- seq(
+  beta_hat - 4 * se_beta,
+  beta_hat + 4 * se_beta,
+  length.out = 500
+)
+
+ll_grid <- tibble(
+  beta = beta_grid,
+  logLik = map_dbl(
+    beta_grid,
+    loglik_beta
+  )
+)
+
+options(
+  repr.plot.width = 12,
+  repr.plot.height = 7
+)
+
+ggplot(
+  ll_grid,
+  aes(x = beta, y = logLik)
+) +
+  geom_line() +
+  geom_vline(
+    xintercept = 0,
+    linetype = "dashed"
+  ) +
+  geom_vline(
+    xintercept = beta_hat,
+    linetype = "dotted"
+  ) +
+  theme_minimal() +
+  labs(
+    title = "帳尻合わせパラメータ β の対数尤度",
+    subtitle = paste0(
+      "β_hat = ",
+      round(beta_hat, 4),
+      "   95% CI = [",
+      round(ci_lower, 4),
+      ", ",
+      round(ci_upper, 4),
+      "]"
+    ),
+    x = expression(beta),
+    y = "log likelihood"
+  )
+```
+
+```{r}
+# ============================================
+# 1系列から beta_hat を計算する関数
+# ============================================
+
+estimate_beta <- function(obs_sim) {
+
+  N_sim <- length(obs_sim)
+
+  obs_idx_sim <- match(
+    obs_sim,
+    patterns
+  )
+
+  D_sim <- matrix(
+    0,
+    nrow = N_sim,
+    ncol = length(patterns)
+  )
+
+  counts_sim <- setNames(
+    rep(0, length(patterns)),
+    patterns
+  )
+
+  for (t in seq_len(N_sim)) {
+
+    D_sim[t, ] <-
+      counts_sim - (t - 1) * q
+
+    counts_sim[obs_sim[t]] <-
+      counts_sim[obs_sim[t]] + 1
+  }
+
+  loglik_sim <- function(beta) {
+
+    eta <- matrix(
+      log(q),
+      nrow = N_sim,
+      ncol = length(patterns),
+      byrow = TRUE
+    ) - beta * D_sim
+
+    eta_max <- apply(
+      eta,
+      1,
+      max
+    )
+
+    log_denom <- eta_max +
+      log(
+        rowSums(
+          exp(eta - eta_max)
+        )
+      )
+
+    sum(
+      eta[
+        cbind(
+          seq_len(N_sim),
+          obs_idx_sim
+        )
+      ] - log_denom
+    )
+  }
+
+  fit_sim <- optim(
+    par = 0,
+    fn = function(beta) {
+      -loglik_sim(beta)
+    },
+    method = "BFGS"
+  )
+
+  unname(fit_sim$par)
+}
+
+
+# ============================================
+# Monte Carlo
+# ============================================
+
+set.seed(12345)
+
+nsim <- 5000
+
+beta_sim <- replicate(
+  nsim,
+  {
+
+    obs_sim <- sample(
+      patterns,
+      size = N,
+      replace = TRUE,
+      prob = q
+    )
+
+    estimate_beta(obs_sim)
+  }
+)
+
+
+# beta > 0 の片側 p-value
+p_mc <- (
+  sum(beta_sim >= beta_hat) + 1
+) / (
+  nsim + 1
+)
+
+p_mc
+```
+
+```{r}
+ggplot(
+  tibble(beta_hat_sim = beta_sim),
+  aes(x = beta_hat_sim)
+) +
+  geom_histogram(
+    bins = 50
+  ) +
+  geom_vline(
+    xintercept = beta_hat,
+    linetype = "dashed",
+    linewidth = 1
+  ) +
+  geom_vline(
+    xintercept = 0,
+    linetype = "dotted"
+  ) +
+  theme_minimal() +
+  labs(
+    title = "i.i.d.モデル下での β 推定値",
+    subtitle = paste0(
+      "Observed β_hat = ",
+      round(beta_hat, 4),
+      "   Monte Carlo p = ",
+      signif(p_mc, 3)
+    ),
+    x = expression(hat(beta)),
+    y = "Simulation count"
+  )
+```
+
+# 時変確率モデル
+
+## Multinomial GAM
+
+```{r}
+library(mgcv)
+
+patterns <- c(
+  "AAA", "AAB", "AAC",
+  "ABA", "ABB", "ABC"
+)
+
+df_analysis <- df %>%
+  arrange(`日付`) %>%
+  mutate(
+    # mgcv::multinom は 0, ..., K の整数カテゴリを使う
+    y = match(`食材パターン`, patterns) - 1,
+
+    # 時間軸
+    day = as.numeric(`日付` - min(`日付`))
+  )
+```
+
+```{r}
+fit_const <- gam(
+  list(
+    y ~ 1,
+    ~ 1,
+    ~ 1,
+    ~ 1,
+    ~ 1
+  ),
+  family = multinom(K = 5),
+  data = df_analysis,
+  method = "REML"
+)
+```
+
+```{r}
+fit_time <- gam(
+  list(
+    y ~ s(day, k = 10, bs = "cr"),
+    ~ s(day, k = 10, bs = "cr"),
+    ~ s(day, k = 10, bs = "cr"),
+    ~ s(day, k = 10, bs = "cr"),
+    ~ s(day, k = 10, bs = "cr")
+  ),
+  family = multinom(K = 5),
+  data = df_analysis,
+  method = "REML"
+)
+```
+
+```{r}
+summary(fit_time)
+```
+
+```{r}
+AIC(fit_const, fit_time)
+```
+
+```{r}
+# 週1点のみ（フルでやろうとしたらRAMクラッシュしたため）
+pred_grid <- tibble(
+  day = seq(
+    min(df_analysis$day),
+    max(df_analysis$day),
+    by = 7
+  )
+) %>%
+  mutate(
+    `日付` = min(df_analysis$`日付`) + day
+  )
+
+prob_time <- predict(
+  fit_time,
+  newdata = pred_grid,
+  type = "response"
+)
+
+colnames(prob_time) <- patterns
+
+plot_prob <- bind_cols(
+  pred_grid,
+  as.data.frame(prob_time)
+) %>%
+  pivot_longer(
+    cols = all_of(patterns),
+    names_to = "食材パターン",
+    values_to = "prob"
+  )
+
+ggplot(
+  plot_prob,
+  aes(
+    x = `日付`,
+    y = prob,
+    color = `食材パターン`
+  )
+) +
+  geom_line(linewidth = 0.9) +
+  geom_hline(
+    yintercept = c(1/9, 2/9),
+    linetype = "dashed"
+  ) +
+  scale_y_continuous(labels = scales::percent) +
+  theme_minimal() +
+  labs(
+    title = "Multinomial GAM による食材パターン出現確率",
+    x = "日付",
+    y = "推定出現確率",
+    color = "食材パターン"
+  )
+```
+
+## 月別 multinomial
+
+```{r}
+library(VGAM)
+```
+
+```{r}
+
+df_month <- df %>%
+  mutate(
+    month = format(`日付`, "%Y-%m")
+  ) %>%
+  mutate(
+    食材パターン = factor(
+      `食材パターン`,
+      levels = c("AAA","AAB","AAC","ABA","ABB","ABC")
+    )
+  )
+
+
+# 定数モデル
+fit_const <- vglm(
+  食材パターン ~ 1,
+  family = multinomial(),
+  data = df_month
+)
+
+
+# 月変化モデル
+fit_month <- vglm(
+  食材パターン ~ month,
+  family = multinomial(),
+  data = df_month
+)
+
+
+AIC(fit_const)
+AIC(fit_month)
+```
+
+```{r}
+LR <- 2 * (logLik(fit_month) - logLik(fit_const))
+
+df_diff <- attr(logLik(fit_month), "df") -
+           attr(logLik(fit_const), "df")
+
+p_value <- pchisq(
+  LR,
+  df = df_diff,
+  lower.tail = FALSE
+)
+
+LR
+df_diff
+p_value
+```
+
+```{r}
+new_month <- data.frame(
+  month = unique(df_month$month)
+)
+
+
+pred <- predict(
+  fit_month,
+  newdata = new_month,
+  type = "response"
+)
+
+
+pred_df <- cbind(
+  new_month,
+  as.data.frame(pred)
+) %>%
+  tidyr::pivot_longer(
+    cols = -month,
+    names_to = "食材パターン",
+    values_to = "確率"
+  )
+
+
+ggplot(
+  pred_df,
+  aes(
+    x = month,
+    y = 確率,
+    color = 食材パターン,
+    group = 食材パターン
+  )
+) +
+  geom_line() +
+  geom_point() +
+  scale_y_continuous(labels = percent) +
+  theme_minimal() +
+  labs(
+    title = "月別 multinomial 推定確率",
+    x = "月",
+    y = "推定確率"
+  )
+```
+
+## Dirichlet-multinomial
+
+```{r}
+library(MCMCpack)
+```
+
+### 1. まず過分散の検定（週単位）
+
+```{r}
+
+patterns <- c(
+  "AAA", "AAB", "AAC",
+  "ABA", "ABB", "ABC"
+)
+
+df_test <- df %>%
+  mutate(date = as.Date(`日付`))
+
+min_date <- min(df_test$date)
+max_date <- max(df_test$date)
+
+df_analysis <- df_test %>%
+  mutate(
+    week = floor_date(`日付`, "week", week_start = 2)
+  ) %>%
+  filter(
+      week >= min_date,
+      week + days(6) <= max_date
+  )
+
+
+
+# ============================================
+# 週ごとの6パターン件数
+# ============================================
+
+weekly <- df_analysis %>%
+  count(week, `食材パターン`, name = "n") %>%
+  complete(
+    week,
+    `食材パターン` = patterns,
+    fill = list(n = 0)
+  ) %>%
+  pivot_wider(
+    names_from = `食材パターン`,
+    values_from = n
+  ) %>%
+  arrange(week)
+
+
+X <- as.matrix(
+  weekly[, patterns]
+)
+
+# 各週の総観測数
+n_week <- rowSums(X)
+
+# 全期間から推定した固定出現確率
+p_hat <- colSums(X) / sum(X)
+
+p_hat
+```
+
+```{r}
+# ============================================
+# 観測された週間変動の大きさ
+# ============================================
+
+E <- outer(
+  n_week,
+  p_hat
+)
+
+colnames(E) <- patterns
+
+chi_obs <- sum(
+  (X - E)^2 / E
+)
+
+chi_obs
+```
+
+```{r}
+set.seed(123)
+
+B <- 10000
+
+chi_sim <- replicate(
+  B,
+  {
+    # 固定 multinomial から週ごとに生成
+    X_sim <- t(
+      vapply(
+        n_week,
+        function(n) {
+          rmultinom(
+            n = 1,
+            size = n,
+            prob = p_hat
+          )[, 1]
+        },
+        numeric(length(patterns))
+      )
+    )
+
+    # ★ 各シミュレーションで p を再推定
+    p_hat_sim <- colSums(X_sim) / sum(X_sim)
+
+    E_sim <- outer(
+      n_week,
+      p_hat_sim
+    )
+
+    sum(
+      (X_sim - E_sim)^2 / E_sim
+    )
+  }
+)
+
+# 過分散側
+p_over <- (
+  sum(chi_sim >= chi_obs) + 1
+) / (
+  B + 1
+)
+
+# 過小分散側
+p_under <- (
+  sum(chi_sim <= chi_obs) + 1
+) / (
+  B + 1
+)
+
+cat(
+  "Observed Pearson statistic =", chi_obs,
+  "\nOverdispersion p-value =", p_over,
+  "\nUnderdispersion p-value =", p_under,
+  "\n"
+)
+```
+
+```{r}
+ggplot(
+  tibble(chi = chi_sim),
+  aes(x = chi)
+) +
+  geom_histogram(
+    bins = 50
+  ) +
+  geom_vline(
+    xintercept = chi_obs,
+    linetype = "dashed",
+    linewidth = 1
+  ) +
+  theme_minimal() +
+  labs(
+    title = "固定 multinomial モデル下での週ごとの変動",
+    subtitle = paste0(
+      "Monte Carlo p = ",
+      signif(p_over, 3)
+    ),
+    x = "Pearson statistic",
+    y = "Simulation count"
+  )
+```
+
+```{r}
+# 開始曜日の表示用
+week_labels <- c(
+  "月曜", "火曜", "水曜", "木曜",
+  "金曜", "土曜", "日曜"
+)
+test_week_start <- function(
+  ws,
+  data = df_test,
+  B = 10000
+) {
+
+  # ----------------------------------------
+  # 1. 指定曜日を週の開始日にする
+  # ----------------------------------------
+
+  df_week <- data %>%
+    mutate(
+      week = floor_date(
+        date,
+        unit = "week",
+        week_start = ws
+      ) %>%
+        as.Date()
+    )
+
+  # ----------------------------------------
+  # 2. 端の不完全週を除外
+  #
+  # 週の開始日 >= データ収集開始日
+  # 週の終了日 <= データ収集終了日
+  # の両方を満たす週だけ残す
+  # ----------------------------------------
+
+  df_week <- df_week %>%
+    filter(
+      week >= min_date,
+      week + days(6) <= max_date
+    )
+
+  # ----------------------------------------
+  # 3. 週 × 食材パターンの件数表
+  # ----------------------------------------
+
+  weekly <- df_week %>%
+    count(
+      week,
+      `食材パターン`,
+      name = "n"
+    ) %>%
+    complete(
+      week,
+      `食材パターン` = patterns,
+      fill = list(n = 0)
+    ) %>%
+    pivot_wider(
+      names_from = `食材パターン`,
+      values_from = n
+    ) %>%
+    arrange(week)
+
+  X <- as.matrix(
+    weekly[, patterns]
+  )
+
+  # 各週のサンプル数
+  n_week <- rowSums(X)
+
+  # 全期間から共通確率を推定
+  p_hat <- colSums(X) / sum(X)
+
+  # ----------------------------------------
+  # 4. 観測データの Pearson 統計量
+  # ----------------------------------------
+
+  E <- outer(
+    n_week,
+    p_hat
+  )
+
+  chi_obs <- sum(
+    (X - E)^2 / E
+  )
+
+  # ----------------------------------------
+  # 5. Monte Carlo
+  # ----------------------------------------
+
+  chi_sim <- replicate(
+    B,
+    {
+
+      X_sim <- t(
+        vapply(
+          n_week,
+          function(n) {
+            rmultinom(
+              n = 1,
+              size = n,
+              prob = p_hat
+            )[, 1]
+          },
+          numeric(length(patterns))
+        )
+      )
+
+      # 各シミュレーションでも確率を再推定
+      p_hat_sim <-
+        colSums(X_sim) / sum(X_sim)
+
+      E_sim <- outer(
+        n_week,
+        p_hat_sim
+      )
+
+      sum(
+        (X_sim - E_sim)^2 / E_sim
+      )
+    }
+  )
+
+  # ----------------------------------------
+  # 6. p値
+  # ----------------------------------------
+
+  p_under <- (
+    sum(chi_sim <= chi_obs) + 1
+  ) / (
+    B + 1
+  )
+
+  p_over <- (
+    sum(chi_sim >= chi_obs) + 1
+  ) / (
+    B + 1
+  )
+
+  # ----------------------------------------
+  # 結果
+  # ----------------------------------------
+
+  tibble(
+    week_start = ws,
+    week_start_label = week_labels[ws],
+    n_weeks = nrow(X),
+    n_obs = sum(X),
+    first_week = min(weekly$week),
+    last_week = max(weekly$week),
+    chi_obs = chi_obs,
+    p_under = p_under,
+    p_over = p_over
+  )
+}
+```
+
+```{r}
+set.seed(123)
+
+result_week_start_complete <- map_dfr(
+  1:7,
+  ~ test_week_start(
+    ws = .x,
+    B = 10000
+  )
+)
+```
+
+```{r}
+result_week_start_complete
+```
+### 2. 過分散検定、1,2,4週単位で比較
+
+```{r}
+# ============================================
+# 火曜始まりのゲーム週を作る
+# ============================================
+
+df_week <- df_test %>%
+  mutate(
+    week = floor_date(
+      date,
+      unit = "week",
+      week_start = 2   # 火曜始まり
+    ) %>%
+      as.Date()
+  ) %>%
+  # 最初・最後の不完全週を除外
+  filter(
+    week >= min_date,
+    week + days(6) <= max_date
+  )
+
+
+# 完全週の範囲
+first_week <- min(df_week$week)
+last_week  <- max(df_week$week)
+
+
+# 週 × パターンの件数
+weekly_counts <- df_week %>%
+  count(
+    week,
+    `食材パターン`,
+    name = "n"
+  ) %>%
+  complete(
+    week = seq(
+      first_week,
+      last_week,
+      by = "1 week"
+    ),
+    `食材パターン` = patterns,
+    fill = list(n = 0)
+  ) %>%
+  arrange(
+    week,
+    `食材パターン`
+  )
+```
+
+
+```{r}
+# ============================================
+# Lゲーム週ごとにまとめて検定する関数
+# ============================================
+
+test_block_length <- function(
+  L,
+  weekly_data = weekly_counts,
+  B = 10000
+) {
+
+  # ------------------------------------------
+  # 1. 各ゲーム週に通し番号をつける
+  # ------------------------------------------
+
+  week_table <- tibble(
+    week = sort(unique(weekly_data$week))
+  ) %>%
+    mutate(
+      week_index = row_number(),
+
+      # L週ずつまとめる
+      block = (week_index - 1) %/% L + 1
+    )
+
+
+  # ------------------------------------------
+  # 2. L週単位のブロックを作る
+  # ------------------------------------------
+
+  block_info <- week_table %>%
+    group_by(block) %>%
+    summarise(
+      n_weeks = n(),
+      block_start = min(week),
+      block_end = max(week) + days(6),
+      .groups = "drop"
+    ) %>%
+    # L週揃っていない最後のブロックを落とす
+    filter(n_weeks == L)
+
+
+  block_counts <- weekly_data %>%
+    left_join(
+      week_table,
+      by = "week"
+    ) %>%
+    semi_join(
+      block_info,
+      by = "block"
+    ) %>%
+    group_by(
+      block,
+      `食材パターン`
+    ) %>%
+    summarise(
+      n = sum(n),
+      .groups = "drop"
+    ) %>%
+    complete(
+      block,
+      `食材パターン` = patterns,
+      fill = list(n = 0)
+    ) %>%
+    pivot_wider(
+      names_from = `食材パターン`,
+      values_from = n
+    ) %>%
+    arrange(block)
+
+
+  # ------------------------------------------
+  # 3. 件数行列
+  # ------------------------------------------
+
+  X <- as.matrix(
+    block_counts[, patterns]
+  )
+
+  n_block <- rowSums(X)
+
+  # 観測が0件のブロックが万一あれば除外
+  keep <- n_block > 0
+
+  X <- X[keep, , drop = FALSE]
+  n_block <- n_block[keep]
+
+
+  # ------------------------------------------
+  # 4. 全期間共通の出現確率を推定
+  # ------------------------------------------
+
+  p_hat <- colSums(X) / sum(X)
+
+
+  # ------------------------------------------
+  # 5. 観測データの Pearson 統計量
+  # ------------------------------------------
+
+  E <- outer(
+    n_block,
+    p_hat
+  )
+
+  chi_obs <- sum(
+    (X - E)^2 / E
+  )
+
+
+  # ------------------------------------------
+  # 6. Monte Carlo
+  # ------------------------------------------
+
+  chi_sim <- replicate(
+    B,
+    {
+
+      X_sim <- t(
+        vapply(
+          n_block,
+          function(n) {
+            rmultinom(
+              n = 1,
+              size = n,
+              prob = p_hat
+            )[, 1]
+          },
+          numeric(length(patterns))
+        )
+      )
+
+      # シミュレーションごとに共通確率を再推定
+      p_hat_sim <-
+        colSums(X_sim) / sum(X_sim)
+
+      E_sim <- outer(
+        n_block,
+        p_hat_sim
+      )
+
+      sum(
+        (X_sim - E_sim)^2 / E_sim
+      )
+    }
+  )
+
+
+  # ------------------------------------------
+  # 7. Monte Carlo p-value
+  # ------------------------------------------
+
+  p_under <- (
+    sum(chi_sim <= chi_obs) + 1
+  ) / (
+    B + 1
+  )
+
+  p_over <- (
+    sum(chi_sim >= chi_obs) + 1
+  ) / (
+    B + 1
+  )
+
+
+  # ------------------------------------------
+  # 8. 結果
+  # ------------------------------------------
+
+  tibble(
+    L = L,
+    days = 7 * L,
+    n_blocks = nrow(X),
+    n_obs = sum(X),
+    chi_obs = chi_obs,
+    p_under = p_under,
+    p_over = p_over
+  )
+}
+```
+
+```{r}
+set.seed(123)
+
+result_block_length <- map_dfr(
+  c(1, 2, 4),
+  ~ test_block_length(
+    L = .x,
+    B = 10000
+  )
+)
+
+result_block_length
+```
+
+#### サンプルを揃える
+
+
+```{r}
+block_lengths <- c(1, 2, 4)
+
+# ============================================================
+# 2. 1, 2, 4週で共通して使える期間だけ残す
+# ============================================================
+
+all_weeks <- sort(
+  unique(weekly_counts$week)
+)
+
+n_weeks_all <- length(all_weeks)
+
+# 最大ブロック長（今回は4）の倍数になる最大週数
+n_weeks_common <- floor(
+  n_weeks_all / max(block_lengths)
+) * max(block_lengths)
+
+# 今回は先頭から36週を使用
+common_weeks <- all_weeks[
+  seq_len(n_weeks_common)
+]
+
+weekly_common <- weekly_counts %>%
+  filter(
+    week %in% common_weeks
+  )
+
+cat(
+  "全完全週数 =", n_weeks_all,
+  "\n共通利用週数 =", n_weeks_common,
+  "\n開始 =", min(common_weeks),
+  "\n終了 =", max(common_weeks) + days(6),
+  "\n"
+)
+```
+```{r}
+# ============================================================
+# 3. L週単位で Monte Carlo 検定
+# ============================================================
+
+test_common_block <- function(
+  L,
+  weekly_data = weekly_common,
+  B = 10000
+) {
+
+  # ----------------------------------------
+  # 各ゲーム週に通し番号
+  # ----------------------------------------
+
+  week_table <- tibble(
+    week = sort(
+      unique(weekly_data$week)
+    )
+  ) %>%
+    mutate(
+      week_index = row_number(),
+      block = (week_index - 1) %/% L + 1
+    )
+
+
+  # ----------------------------------------
+  # L週単位に集約
+  # ----------------------------------------
+
+  block_counts <- weekly_data %>%
+    left_join(
+      week_table,
+      by = "week"
+    ) %>%
+    group_by(
+      block,
+      `食材パターン`
+    ) %>%
+    summarise(
+      n = sum(n),
+      .groups = "drop"
+    ) %>%
+    complete(
+      block,
+      `食材パターン` = patterns,
+      fill = list(n = 0)
+    ) %>%
+    pivot_wider(
+      names_from = `食材パターン`,
+      values_from = n
+    ) %>%
+    arrange(block)
+
+
+  # ----------------------------------------
+  # 件数行列
+  # ----------------------------------------
+
+  X <- as.matrix(
+    block_counts[, patterns]
+  )
+
+  n_block <- rowSums(X)
+
+  # 全期間共通の確率
+  p_hat <- colSums(X) / sum(X)
+
+
+  # ----------------------------------------
+  # 観測 Pearson 統計量
+  # ----------------------------------------
+
+  E <- outer(
+    n_block,
+    p_hat
+  )
+
+  chi_obs <- sum(
+    (X - E)^2 / E
+  )
+
+
+  # ----------------------------------------
+  # Monte Carlo
+  # ----------------------------------------
+
+  chi_sim <- replicate(
+    B,
+    {
+
+      X_sim <- t(
+        vapply(
+          n_block,
+          function(n) {
+            rmultinom(
+              n = 1,
+              size = n,
+              prob = p_hat
+            )[, 1]
+          },
+          numeric(length(patterns))
+        )
+      )
+
+      # 各シミュレーションでも共通確率を再推定
+      p_hat_sim <- colSums(X_sim) / sum(X_sim)
+
+      # ごく稀にあるカテゴリが0件になった場合への保険
+      if (any(p_hat_sim == 0)) {
+        return(NA_real_)
+      }
+
+      E_sim <- outer(
+        n_block,
+        p_hat_sim
+      )
+
+      sum(
+        (X_sim - E_sim)^2 / E_sim
+      )
+    }
+  )
+
+  chi_sim <- chi_sim[
+    is.finite(chi_sim)
+  ]
+
+
+  # ----------------------------------------
+  # p値
+  # ----------------------------------------
+
+  p_under <- (
+    sum(chi_sim <= chi_obs) + 1
+  ) / (
+    length(chi_sim) + 1
+  )
+
+  p_over <- (
+    sum(chi_sim >= chi_obs) + 1
+  ) / (
+    length(chi_sim) + 1
+  )
+
+
+  # ----------------------------------------
+  # 過分散 / 過小分散の効果量
+  # ----------------------------------------
+
+  mean_chi_iid <- mean(chi_sim)
+
+  dispersion_ratio <-
+    chi_obs / mean_chi_iid
+
+
+  # ----------------------------------------
+  # 結果
+  # ----------------------------------------
+
+  tibble(
+    L = L,
+    days = 7 * L,
+    n_blocks = nrow(X),
+    n_obs = sum(X),
+
+    chi_obs = chi_obs,
+
+    mean_chi_iid = mean_chi_iid,
+    dispersion_ratio = dispersion_ratio,
+
+    p_under = p_under,
+    p_over = p_over,
+
+    chi_iid_q025 = quantile(
+      chi_sim,
+      0.025,
+      names = FALSE
+    ),
+
+    chi_iid_q975 = quantile(
+      chi_sim,
+      0.975,
+      names = FALSE
+    )
+  )
+}
+```
+
+```{r}
+# ============================================================
+# 4. L = 1, 2, 4 を比較
+# ============================================================
+
+set.seed(123)
+
+result_common_blocks <- map_dfr(
+  block_lengths,
+  ~ test_common_block(
+    L = .x,
+    B = 10000
+  )
+)
+
+result_common_blocks
+```
+
+#### 開始ブロックをずらして検定
+
+```{r}
+window_length <- 36
+
+test_window_block <- function(
+  window_no,
+  L,
+  weekly_data = weekly_counts,
+  window_length = 36,
+  B = 10000
+) {
+
+  all_weeks <- sort(
+    unique(weekly_data$week)
+  )
+
+  # ----------------------------------------
+  # 1. window_no に対応する36週間を選択
+  # ----------------------------------------
+
+  start_index <- window_no
+  end_index <- start_index + window_length - 1
+
+  weeks_used <- all_weeks[
+    start_index:end_index
+  ]
+
+  data_window <- weekly_data %>%
+    filter(
+      week %in% weeks_used
+    )
+
+
+  # ----------------------------------------
+  # 2. L週ずつブロック化
+  # ----------------------------------------
+
+  week_table <- tibble(
+    week = weeks_used,
+    week_index = seq_along(weeks_used)
+  ) %>%
+    mutate(
+      block = (week_index - 1) %/% L + 1
+    )
+
+
+  block_counts <- data_window %>%
+    left_join(
+      week_table,
+      by = "week"
+    ) %>%
+    group_by(
+      block,
+      `食材パターン`
+    ) %>%
+    summarise(
+      n = sum(n),
+      .groups = "drop"
+    ) %>%
+    complete(
+      block,
+      `食材パターン` = patterns,
+      fill = list(n = 0)
+    ) %>%
+    pivot_wider(
+      names_from = `食材パターン`,
+      values_from = n
+    ) %>%
+    arrange(block)
+
+
+  # ----------------------------------------
+  # 3. 件数行列
+  # ----------------------------------------
+
+  X <- as.matrix(
+    block_counts[, patterns]
+  )
+
+  n_block <- rowSums(X)
+
+
+  # ----------------------------------------
+  # 4. この36週間全体で共通確率を推定
+  #
+  # 同じ window_no なら L=1,2,4 で
+  # まったく同じ p_hat になる
+  # ----------------------------------------
+
+  p_hat <- colSums(X) / sum(X)
+
+
+  # ----------------------------------------
+  # 5. 観測 Pearson 統計量
+  # ----------------------------------------
+
+  E <- outer(
+    n_block,
+    p_hat
+  )
+
+  chi_obs <- sum(
+    (X - E)^2 / E
+  )
+
+
+  # ----------------------------------------
+  # 6. Monte Carlo
+  # ----------------------------------------
+
+  chi_sim <- replicate(
+    B,
+    {
+
+      X_sim <- t(
+        vapply(
+          n_block,
+          function(n) {
+            rmultinom(
+              n = 1,
+              size = n,
+              prob = p_hat
+            )[, 1]
+          },
+          numeric(length(patterns))
+        )
+      )
+
+      # 各シミュレーションでも p を再推定
+      p_hat_sim <- colSums(X_sim) / sum(X_sim)
+
+      if (any(p_hat_sim == 0)) {
+        return(NA_real_)
+      }
+
+      E_sim <- outer(
+        n_block,
+        p_hat_sim
+      )
+
+      sum(
+        (X_sim - E_sim)^2 / E_sim
+      )
+    }
+  )
+
+  chi_sim <- chi_sim[
+    is.finite(chi_sim)
+  ]
+
+
+  # ----------------------------------------
+  # 7. p値・効果量
+  # ----------------------------------------
+
+  p_under <- (
+    sum(chi_sim <= chi_obs) + 1
+  ) / (
+    length(chi_sim) + 1
+  )
+
+  p_over <- (
+    sum(chi_sim >= chi_obs) + 1
+  ) / (
+    length(chi_sim) + 1
+  )
+
+  mean_chi_iid <- mean(chi_sim)
+
+  dispersion_ratio <-
+    chi_obs / mean_chi_iid
+
+
+  # ----------------------------------------
+  # 8. 出力
+  # ----------------------------------------
+
+  tibble(
+    window_no = window_no,
+    L = L,
+    days = 7 * L,
+
+    first_week = min(weeks_used),
+    last_week = max(weeks_used),
+
+    n_weeks = length(weeks_used),
+    n_blocks = nrow(X),
+    n_obs = sum(X),
+
+    chi_obs = chi_obs,
+    mean_chi_iid = mean_chi_iid,
+    dispersion_ratio = dispersion_ratio,
+
+    p_under = p_under,
+    p_over = p_over
+  )
+}
+```
+
+```{r}
+set.seed(123)
+
+result_window_block <- map_dfr(
+  1:4,
+  function(window_no) {
+
+    map_dfr(
+      block_lengths,
+      function(L) {
+
+        test_window_block(
+          window_no = window_no,
+          L = L,
+          B = 10000
+        )
+
+      }
+    )
+
+  }
+)
+
+result_window_block
+```
+### 標準化偏差の自己相関
+
+```{r}
+
+patterns <- c(
+  "AAA", "AAB", "AAC",
+  "ABA", "ABB", "ABC"
+)
+
+# ============================================================
+# 週ごとの件数行列
+# ============================================================
+
+weekly_wide <- weekly_counts %>%
+  pivot_wider(
+    names_from = `食材パターン`,
+    values_from = n,
+    values_fill = 0
+  ) %>%
+  arrange(week)
+
+X <- as.matrix(
+  weekly_wide[, patterns]
+)
+
+n_week <- rowSums(X)
+
+# 全期間共通の出現確率を推定
+p_hat <- colSums(X) / sum(X)
+
+p_hat
+```
+```{r}
+# ============================================================
+# 標準化偏差
+# ============================================================
+
+E <- outer(
+  n_week,
+  p_hat
+)
+
+SD <- sqrt(
+  outer(
+    n_week,
+    p_hat * (1 - p_hat)
+  )
+)
+
+Z <- (X - E) / SD
+
+colnames(Z) <- patterns
+```
+```{r}
+# ============================================================
+# lag h の標準化偏差の類似度
+# ============================================================
+
+calc_lag_stat <- function(
+  Z,
+  h
+) {
+
+  W <- nrow(Z)
+
+  Z_now <- Z[
+    1:(W - h),
+    ,
+    drop = FALSE
+  ]
+
+  Z_lag <- Z[
+    (1 + h):W,
+    ,
+    drop = FALSE
+  ]
+
+  # 各週ペアについて6パターンの積を平均し、
+  # さらに全週ペアについて平均
+  mean(
+    rowMeans(
+      Z_now * Z_lag
+    )
+  )
+}
+```
+
+```{r}
+lags <- 1:4
+
+lag_obs <- tibble(
+  lag = lags,
+  stat_obs = map_dbl(
+    lags,
+    ~ calc_lag_stat(
+      Z,
+      .x
+    )
+  )
+)
+
+lag_obs
+```
+
+```{r}
+# ============================================================
+# iid Monte Carlo
+# ============================================================
+
+set.seed(123)
+
+B <- 10000
+
+lag_sim <- replicate(
+  B,
+  {
+
+    # 実データと同じ各週のサンプルサイズで生成
+    X_sim <- t(
+      vapply(
+        n_week,
+        function(n) {
+          rmultinom(
+            n = 1,
+            size = n,
+            prob = p_hat
+          )[, 1]
+        },
+        numeric(length(patterns))
+      )
+    )
+
+    # 疑似データから p を再推定
+    p_hat_sim <-
+      colSums(X_sim) / sum(X_sim)
+
+    # 念のため
+    if (
+      any(p_hat_sim <= 0) ||
+      any(p_hat_sim >= 1)
+    ) {
+      return(
+        rep(
+          NA_real_,
+          length(lags)
+        )
+      )
+    }
+
+    E_sim <- outer(
+      n_week,
+      p_hat_sim
+    )
+
+    SD_sim <- sqrt(
+      outer(
+        n_week,
+        p_hat_sim *
+          (1 - p_hat_sim)
+      )
+    )
+
+    Z_sim <-
+      (X_sim - E_sim) /
+      SD_sim
+
+    map_dbl(
+      lags,
+      ~ calc_lag_stat(
+        Z_sim,
+        .x
+      )
+    )
+  }
+)
+
+# replicate の結果を
+# simulation × lag にする
+lag_sim <- t(lag_sim)
+
+colnames(lag_sim) <-
+  paste0("lag", lags)
+
+lag_sim <- lag_sim[
+  complete.cases(lag_sim),
+  ,
+  drop = FALSE
+]
+```
+
+```{r}
+# ============================================================
+# 観測値と iid 帰無分布を比較
+# ============================================================
+
+result_lag <- map_dfr(
+  seq_along(lags),
+  function(i) {
+
+    sim <- lag_sim[, i]
+    obs <- lag_obs$stat_obs[i]
+
+    p_negative <- (
+      sum(sim <= obs) + 1
+    ) / (
+      length(sim) + 1
+    )
+
+    p_positive <- (
+      sum(sim >= obs) + 1
+    ) / (
+      length(sim) + 1
+    )
+
+    p_two_sided <- min(
+      1,
+      2 * min(
+        p_negative,
+        p_positive
+      )
+    )
+
+    tibble(
+      lag = lags[i],
+      stat_obs = obs,
+
+      mean_iid = mean(sim),
+
+      q025 = quantile(
+        sim,
+        0.025,
+        names = FALSE
+      ),
+
+      q975 = quantile(
+        sim,
+        0.975,
+        names = FALSE
+      ),
+
+      p_negative = p_negative,
+      p_positive = p_positive,
+      p_two_sided = p_two_sided
+    )
+  }
+)
+
+result_lag
+```
+
+```{r}
+ggplot(
+  result_lag,
+  aes(
+    x = lag,
+    y = stat_obs
+  )
+) +
+  geom_ribbon(
+    aes(
+      ymin = q025,
+      ymax = q975
+    ),
+    alpha = 0.2
+  ) +
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed"
+  ) +
+  geom_line() +
+  geom_point(
+    size = 3
+  ) +
+  scale_x_continuous(
+    breaks = 1:4
+  ) +
+  theme_minimal() +
+  labs(
+    title = "週ごとの食材パターン偏差の時間依存",
+    subtitle = "帯：固定 iid Monte Carlo の95%区間",
+    x = "Lag（ゲーム週）",
+    y = "標準化偏差ベクトルの平均内積"
+  )
+```
+
+```{r}
+ggplot(
+  result_lag,
+  aes(
+    x = lag,
+    y = stat_obs
+  )
+) +
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed"
+  ) +
+  geom_errorbar(
+    aes(
+      ymin = q025,
+      ymax = q975
+    ),
+    width = 0.15
+  ) +
+  geom_point(
+    size = 3
+  ) +
+  scale_x_continuous(
+    breaks = 1:4
+  ) +
+  theme_minimal() +
+  labs(
+    title = "週ごとの食材パターン偏差の時間依存",
+    subtitle = "エラーバー：固定 iid Monte Carlo の95%区間",
+    x = "Lag（ゲーム週）",
+    y = "標準化偏差ベクトルの平均内積"
+  )
+```
+
+```{r}
+ggplot(
+  result_lag,
+  aes(
+    x = lag,
+    y = stat_obs
+  )
+) +
+  geom_errorbar(
+    aes(
+      ymin = q025,
+      ymax = q975
+    ),
+    width = 0.15
+  ) +
+  geom_line(
+    aes(y = mean_iid),
+    linetype = "dashed"
+  ) +
+  geom_point(size = 3) +
+  scale_x_continuous(
+    breaks = 1:4
+  ) +
+  theme_minimal() +
+  labs(
+    title = "週ごとの食材パターン偏差の時間依存",
+    subtitle = "エラーバー：固定 iid Monte Carlo の95%区間、破線：iid平均",
+    x = "Lag（ゲーム週）",
+    y = "標準化偏差ベクトルの平均内積"
+  )
+```
+```{r}
+result_lag_centered <- result_lag %>%
+  mutate(
+    stat_centered = stat_obs - mean_iid,
+    q025_centered = q025 - mean_iid,
+    q975_centered = q975 - mean_iid
+  )
+
+ggplot(
+  result_lag_centered,
+  aes(
+    x = lag,
+    y = stat_centered
+  )
+) +
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed"
+  ) +
+  geom_errorbar(
+    aes(
+      ymin = q025_centered,
+      ymax = q975_centered
+    ),
+    width = 0.15
+  ) +
+  geom_point(size = 3) +
+  scale_x_continuous(
+    breaks = 1:4
+  ) +
+  theme_minimal() +
+  labs(
+    title = "週ごとの食材パターン偏差の時間依存",
+    subtitle = "固定 iid に対する差。エラーバー：Monte Carlo 95%区間",
+    x = "Lag（ゲーム週）",
+    y = "平均内積 − iid平均"
+  )
+```
+
+## 週内フィードバックモデル
+
+```{r}
+
+patterns <- c(
+  "AAA", "AAB", "AAC",
+  "ABA", "ABB", "ABC"
+)
+
+df_fb <- df %>%
+  mutate(
+    date = as.Date(`日付`),
+    week = floor_date(
+      date,
+      unit = "week",
+      week_start = 2
+    ) %>%
+      as.Date()
+  )
+
+min_date <- min(df_fb$date)
+max_date <- max(df_fb$date)
+
+# 最初・最後の不完全週を除外
+df_fb <- df_fb %>%
+  filter(
+    week >= min_date,
+    week + days(6) <= max_date
+  )
+```
+
+```{r}
+daily_fb <- df_fb %>%
+  count(
+    week,
+    date,
+    `食材パターン`,
+    name = "n"
+  ) %>%
+  complete(
+    nesting(week, date),
+    `食材パターン` = patterns,
+    fill = list(n = 0)
+  ) %>%
+  pivot_wider(
+    names_from = `食材パターン`,
+    values_from = n
+  ) %>%
+  arrange(
+    week,
+    date
+  ) %>%
+  mutate(
+    n_day = rowSums(
+      across(
+        all_of(patterns)
+      )
+    )
+  )
+
+daily_fb
+```
+```{r}
+Y_obs <- as.matrix(
+  daily_fb[, patterns]
+)
+
+q_hat <- colSums(Y_obs) / sum(Y_obs)
+
+q_hat
+```
+  
+```{r}
+make_feedback_state <- function(
+  Y,
+  week,
+  n_day,
+  q
+) {
+
+  J <- ncol(Y)
+
+  D <- matrix(
+    0,
+    nrow = nrow(Y),
+    ncol = J
+  )
+
+  colnames(D) <- colnames(Y)
+
+  week_values <- unique(week)
+
+  for (w in week_values) {
+
+    idx <- which(week == w)
+
+    Y_w <- Y[
+      idx,
+      ,
+      drop = FALSE
+    ]
+
+    n_w <- n_day[idx]
+
+    # 各日より「前」までの累積実測数
+    cum_prev <- sapply(
+      seq_len(J),
+      function(j) {
+        c(
+          0,
+          head(
+            cumsum(Y_w[, j]),
+            -1
+          )
+        )
+      }
+    )
+
+    # 各日より「前」までの総観測数
+    total_prev <- c(
+      0,
+      head(
+        cumsum(n_w),
+        -1
+      )
+    )
+
+    # 実測累積 - 期待累積
+    D[
+      idx,
+      
+    ] <- cum_prev -
+      outer(
+        total_prev,
+        q
+      )
+  }
+
+  list(
+    Y = Y,
+    D = D,
+    week = week,
+    n_day = n_day
+  )
+}
+```
+```{r}
+# 観測データ
+state_obs <- make_feedback_state(
+  Y = Y_obs,
+  week = daily_fb$week,
+  n_day = daily_fb$n_day,
+  q = q_hat
+)
+```
+
+### $$\beta$$ の尤度
+
+```{r}
+loglik_feedback <- function(
+  beta,
+  state,
+  q
+) {
+
+  # log q_j - beta D_j
+  eta <- sweep(
+    -beta * state$D,
+    2,
+    log(q),
+    "+"
+  )
+
+  # numerical stability のため softmax を安定化
+  eta_max <- apply(
+    eta,
+    1,
+    max
+  )
+
+  exp_eta <- exp(
+    eta - eta_max
+  )
+
+  log_denom <-
+    eta_max +
+    log(
+      rowSums(exp_eta)
+    )
+
+  log_p <-
+    eta -
+    log_denom
+
+  # multinomial coefficient は beta に依存しないので省略
+  sum(
+    state$Y * log_p
+  )
+}
+```
+
+### 観測データから $$\hat{\beta}$$ を推定
+
+```{r}
+fit_feedback <- function(
+  state,
+  q
+) {
+
+  fit <- optimize(
+    f = function(beta) {
+      loglik_feedback(
+        beta,
+        state,
+        q
+      )
+    },
+    interval = c(-2, 2),
+    maximum = TRUE
+  )
+
+  fit
+}
+
+
+fit_obs <- fit_feedback(
+  state_obs,
+  q_hat
+)
+
+beta_hat <- fit_obs$maximum
+logLik_hat <- fit_obs$objective
+
+logLik_0 <- loglik_feedback(
+  beta = 0,
+  state = state_obs,
+  q = q_hat
+)
+
+beta_hat
+logLik_hat
+logLik_0
+```
+```{r}
+exp(beta_hat)
+```
+### 観測データでの Wald 的な参考値
+```{r}
+nll <- function(beta) {
+  -loglik_feedback(
+    beta,
+    state_obs,
+    q_hat
+  )
+}
+
+H <- optimHess(
+  par = beta_hat,
+  fn = nll
+)
+
+se_beta <- sqrt(
+  1 / H[1, 1]
+)
+
+z_beta <- beta_hat / se_beta
+
+ci_beta <- beta_hat +
+  c(-1, 1) *
+  qnorm(0.975) *
+  se_beta
+
+p_wald_positive <- pnorm(
+  z_beta,
+  lower.tail = FALSE
+)
+
+tibble(
+  beta_hat = beta_hat,
+  SE = se_beta,
+  CI_low = ci_beta[1],
+  CI_high = ci_beta[2],
+  z = z_beta,
+  p_beta_gt_0 = p_wald_positive,
+  weight_ratio_per_deficit_1 = exp(beta_hat)
+)
+```
+### 固定i.i.d.のもとでの $\hat{\beta}$
+
+```{r}
+simulate_beta_iid <- function(
+  q_generate,
+  daily_template
+) {
+
+  J <- length(patterns)
+
+  # 同じ各日のサンプル数で iid 生成
+  Y_sim <- t(
+    vapply(
+      daily_template$n_day,
+      function(n) {
+        rmultinom(
+          n = 1,
+          size = n,
+          prob = q_generate
+        )[, 1]
+      },
+      numeric(J)
+    )
+  )
+
+  colnames(Y_sim) <- patterns
+
+  # 疑似データ自身から q を再推定
+  q_sim <- colSums(Y_sim) /
+    sum(Y_sim)
+
+  # 念のため
+  if (
+    any(q_sim <= 0) ||
+    any(q_sim >= 1)
+  ) {
+    return(NA_real_)
+  }
+
+  state_sim <- make_feedback_state(
+    Y = Y_sim,
+    week = daily_template$week,
+    n_day = daily_template$n_day,
+    q = q_sim
+  )
+
+  fit_sim <- fit_feedback(
+    state_sim,
+    q_sim
+  )
+
+  fit_sim$maximum
+}
+```
+
+```{r}
+set.seed(123)
+
+B <- 5000
+
+beta_sim <- replicate(
+  B,
+  simulate_beta_iid(
+    q_generate = q_hat,
+    daily_template = daily_fb
+  )
+)
+
+beta_sim <- beta_sim[
+  is.finite(beta_sim)
+]
+```
+
+```{r}
+p_mc_positive <- (
+  sum(beta_sim >= beta_hat) + 1
+) / (
+  length(beta_sim) + 1
+)
+
+p_mc_negative <- (
+  sum(beta_sim <= beta_hat) + 1
+) / (
+  length(beta_sim) + 1
+)
+
+cat(
+  "beta_hat =", beta_hat,
+  "\nMonte Carlo mean beta =", mean(beta_sim),
+  "\n95% iid interval =",
+  quantile(beta_sim, 0.025),
+  ",",
+  quantile(beta_sim, 0.975),
+  "\np(beta >= observed) =",
+  p_mc_positive,
+  "\np(beta <= observed) =",
+  p_mc_negative,
+  "\n"
+)
+```
+
+### 可視化
+```{r}
+ggplot(
+  tibble(beta = beta_sim),
+  aes(x = beta)
+) +
+  geom_histogram(
+    bins = 50
+  ) +
+  geom_vline(
+    xintercept = beta_hat,
+    linetype = "dashed",
+    linewidth = 1
+  ) +
+  theme_minimal() +
+  labs(
+    title = "週内フィードバック係数の固定 iid 帰無分布",
+    subtitle = paste0(
+      "破線：観測値 β̂ = ",
+      round(beta_hat, 3),
+      " / Monte Carlo p = ",
+      signif(p_mc_positive, 3)
+    ),
+    x = expression(hat(beta)),
+    y = "Simulation count"
+  )
+```
+
+## 週内フィードバック、検出力の評価
+
+真の週内フィードバック係数が $\beta = 0.125$  だったとして、今と同じ観測条件で何％の確率で検出できるか？
+
+### 帰無仮説の棄却閾値
+
+```{r}
+alpha <- 0.05
+
+beta_critical <- quantile(
+  beta_sim,
+  probs = 1 - alpha,
+  names = FALSE
+)
+
+beta_critical
+```
+
+### 真の β を指定してデータを生成する関数
+
+```{r}
+simulate_feedback_data <- function(
+  beta_true,
+  q,
+  daily_template
+) {
+
+  J <- length(q)
+  N <- nrow(daily_template)
+
+  Y_sim <- matrix(
+    0,
+    nrow = N,
+    ncol = J
+  )
+
+  colnames(Y_sim) <- patterns
+
+  weeks <- unique(
+    daily_template$week
+  )
+
+  for (w in weeks) {
+
+    idx <- which(
+      daily_template$week == w
+    )
+
+    # その週の累積件数
+    cum_counts <- rep(0, J)
+    cum_total <- 0
+
+    for (i in idx) {
+
+      n <- daily_template$n_day[i]
+
+      # その日の前までの週内偏差
+      D <- cum_counts -
+        cum_total * q
+
+      # p_j ∝ q_j exp(-beta D_j)
+      eta <- log(q) -
+        beta_true * D
+
+      # softmax
+      eta <- eta - max(eta)
+
+      p <- exp(eta)
+      p <- p / sum(p)
+
+      # その日の観測を生成
+      y <- rmultinom(
+        n = 1,
+        size = n,
+        prob = p
+      )[, 1]
+
+      Y_sim[i, ] <- y
+
+      # 翌日のために履歴更新
+      cum_counts <- cum_counts + y
+      cum_total <- cum_total + n
+    }
+  }
+
+  Y_sim
+}
+```
+
+
+
+### 生成したデータに、実データと同じ解析をかける
+
+```{r}
+simulate_and_fit_feedback <- function(
+  beta_true,
+  q_generate,
+  daily_template
+) {
+
+  # フィードバックモデルから生成
+  Y_sim <- simulate_feedback_data(
+    beta_true = beta_true,
+    q = q_generate,
+    daily_template = daily_template
+  )
+
+  # 実解析と同様、q をデータから再推定
+  q_sim <- colSums(Y_sim) /
+    sum(Y_sim)
+
+  if (
+    any(q_sim <= 0) ||
+    any(q_sim >= 1)
+  ) {
+    return(NA_real_)
+  }
+
+  # 週内偏差を再構築
+  state_sim <- make_feedback_state(
+    Y = Y_sim,
+    week = daily_template$week,
+    n_day = daily_template$n_day,
+    q = q_sim
+  )
+
+  # beta を推定
+  fit_sim <- fit_feedback(
+    state_sim,
+    q_sim
+  )
+
+  fit_sim$maximum
+}
+```
+
+### 観測値 $\hat{\beta}=0.125$ が本当だった場合の検出力
+
+```{r}
+set.seed(123)
+
+B_power <- 2000
+
+beta_true_obs <- beta_hat
+
+beta_hat_alt <- replicate(
+  B_power,
+  simulate_and_fit_feedback(
+    beta_true = beta_true_obs,
+    q_generate = q_hat,
+    daily_template = daily_fb
+  )
+)
+
+beta_hat_alt <- beta_hat_alt[
+  is.finite(beta_hat_alt)
+]
+```
+
+```{r}
+power_obs <- mean(
+  beta_hat_alt >= beta_critical
+)
+
+cat(
+  "Assumed true beta =", beta_true_obs,
+  "\nCritical beta =", beta_critical,
+  "\nPower =", power_obs,
+  "\n"
+)
+```
+
+### β をいくつか変えて power curve を作る
+
+```{r}
+beta_grid <- c(
+  0,
+  0.05,
+  0.10,
+  0.125,
+  0.15,
+  0.20,
+  0.25,
+  0.30
+)
+
+set.seed(123)
+
+power_result <- map_dfr(
+  beta_grid,
+  function(beta_true) {
+
+    beta_est <- replicate(
+      B_power,
+      simulate_and_fit_feedback(
+        beta_true = beta_true,
+        q_generate = q_hat,
+        daily_template = daily_fb
+      )
+    )
+
+    beta_est <- beta_est[
+      is.finite(beta_est)
+    ]
+
+    tibble(
+      beta_true = beta_true,
+      n_sim = length(beta_est),
+
+      mean_beta_hat = mean(beta_est),
+      median_beta_hat = median(beta_est),
+
+      q025_beta_hat = quantile(
+        beta_est,
+        0.025,
+        names = FALSE
+      ),
+
+      q975_beta_hat = quantile(
+        beta_est,
+        0.975,
+        names = FALSE
+      ),
+
+      power = mean(
+        beta_est >= beta_critical
+      )
+    )
+  }
+)
+
+power_result
+```
+
+
+
+```{r}
+ggplot(
+  power_result,
+  aes(
+    x = beta_true,
+    y = power
+  )
+) +
+  geom_line() +
+  geom_point(size = 3) +
+  geom_hline(
+    yintercept = 0.8,
+    linetype = "dashed"
+  ) +
+  geom_vline(
+    xintercept = beta_hat,
+    linetype = "dotted"
+  ) +
+  scale_y_continuous(
+    limits = c(0, 1),
+    labels = scales::percent
+  ) +
+  theme_minimal() +
+  labs(
+    title = "週内フィードバック係数の検出力",
+    subtitle = "破線：80% power、縦点線：実データの推定値",
+    x = expression("真の " * beta),
+    y = "検出力"
+  )
+```
+
+## 直近L日間の偏差によるフィードバックモデル
+
+### 日次データ作成
+
+```{r}
+patterns <- c(
+  "AAA", "AAB", "AAC",
+  "ABA", "ABB", "ABC"
+)
+
+# 日付は Date に統一
+df_roll <- df %>%
+  mutate(
+    date = as.Date(`日付`)
+  )
+
+# 観測0件の日も含む、日次×パターン件数
+daily_roll <- df_roll %>%
+  count(
+    date,
+    `食材パターン`,
+    name = "n"
+  ) %>%
+  complete(
+    date = seq(
+      min(date),
+      max(date),
+      by = "day"
+    ),
+    `食材パターン` = patterns,
+    fill = list(n = 0)
+  ) %>%
+  pivot_wider(
+    names_from = `食材パターン`,
+    values_from = n
+  ) %>%
+  arrange(date) %>%
+  mutate(
+    n_day = rowSums(
+      across(all_of(patterns))
+    )
+  )
+
+Y_obs <- as.matrix(
+  daily_roll[, patterns]
+)
+
+colnames(Y_obs) <- patterns
+
+# 全期間共通の基準確率
+q_hat <- colSums(Y_obs) / sum(Y_obs)
+
+q_hat
+```
+
+### 直近 L 日の偏差を作る
+
+```{r}
+
+make_rolling_state <- function(
+  Y,
+  n_day,
+  q,
+  L,
+  eval_start
+) {
+
+  N <- nrow(Y)
+  J <- ncol(Y)
+
+  D <- matrix(
+    0,
+    nrow = N,
+    ncol = J
+  )
+
+  colnames(D) <- colnames(Y)
+
+  for (i in seq_len(N)) {
+
+    # i日目より前のL日間
+    start <- max(1, i - L)
+    end <- i - 1
+
+    # 初日は履歴なし
+    if (end < start) {
+      next
+    }
+
+    past_counts <- colSums(
+      Y[
+        start:end,
+        ,
+        drop = FALSE
+      ]
+    )
+
+    past_total <- sum(
+      n_day[start:end]
+    )
+
+    D[i, ] <-
+      past_counts -
+      past_total * q
+  }
+
+  eval_idx <- which(
+    seq_len(N) >= eval_start &
+      n_day > 0
+  )
+
+  list(
+    Y = Y,
+    D = D,
+    n_day = n_day,
+    eval_idx = eval_idx
+  )
+}
+```
+
+### 尤度
+
+```{r}
+loglik_rolling_feedback <- function(
+  beta,
+  state,
+  q
+) {
+
+  idx <- state$eval_idx
+
+  eta <- sweep(
+    -beta * state$D[idx, , drop = FALSE],
+    2,
+    log(q),
+    "+"
+  )
+
+  eta_max <- apply(
+    eta,
+    1,
+    max
+  )
+
+  exp_eta <- exp(
+    eta - eta_max
+  )
+
+  log_denom <-
+    eta_max +
+    log(rowSums(exp_eta))
+
+  log_p <-
+    eta -
+    log_denom
+
+  sum(
+    state$Y[idx, , drop = FALSE] *
+      log_p
+  )
+}
+```
+
+```{r}
+fit_rolling_feedback <- function(
+  state,
+  q
+) {
+
+  optimize(
+    f = function(beta) {
+
+      loglik_rolling_feedback(
+        beta = beta,
+        state = state,
+        q = q
+      )
+
+    },
+    interval = c(-2, 2),
+    maximum = TRUE
+  )
+}
+```
+
+### 7日・14日で観測値を推定
+
+```{r}
+window_days <- c(7, 14)
+
+max_L <- max(window_days)
+
+# 最初の14日を履歴形成期間として使い、
+# 15日目以降を全モデル共通の評価期間にする
+eval_start <- max_L + 1
+
+result_obs <- map_dfr(
+  window_days,
+  function(L) {
+
+    state <- make_rolling_state(
+      Y = Y_obs,
+      n_day = daily_roll$n_day,
+      q = q_hat,
+      L = L,
+      eval_start = eval_start
+    )
+
+    fit <- fit_rolling_feedback(
+      state = state,
+      q = q_hat
+    )
+
+    beta_hat <- fit$maximum
+
+    logLik_hat <- fit$objective
+
+    logLik_0 <- loglik_rolling_feedback(
+      beta = 0,
+      state = state,
+      q = q_hat
+    )
+
+    tibble(
+      L = L,
+      beta_hat = beta_hat,
+      exp_beta = exp(beta_hat),
+      logLik_hat = logLik_hat,
+      logLik_0 = logLik_0,
+      LR = 2 * (
+        logLik_hat - logLik_0
+      ),
+      n_obs = sum(
+        state$n_day[state$eval_idx]
+      )
+    )
+  }
+)
+
+result_obs
+```
+
+### 固定 iid Monte Carlo
+
+```{r}
+simulate_rolling_iid <- function(
+  q_generate,
+  daily_template,
+  window_days,
+  eval_start
+) {
+
+  J <- length(q_generate)
+
+  # 同じ各日の観測数で iid 生成
+  Y_sim <- t(
+    vapply(
+      daily_template$n_day,
+      function(n) {
+
+        rmultinom(
+          n = 1,
+          size = n,
+          prob = q_generate
+        )[, 1]
+
+      },
+      numeric(J)
+    )
+  )
+
+  colnames(Y_sim) <- patterns
+
+  # 疑似データ自身から q を再推定
+  q_sim <-
+    colSums(Y_sim) /
+    sum(Y_sim)
+
+  if (
+    any(q_sim <= 0) ||
+    any(q_sim >= 1)
+  ) {
+    return(
+      rep(
+        NA_real_,
+        length(window_days)
+      )
+    )
+  }
+
+  map_dbl(
+    window_days,
+    function(L) {
+
+      state_sim <- make_rolling_state(
+        Y = Y_sim,
+        n_day = daily_template$n_day,
+        q = q_sim,
+        L = L,
+        eval_start = eval_start
+      )
+
+      fit_sim <- fit_rolling_feedback(
+        state = state_sim,
+        q = q_sim
+      )
+
+      fit_sim$maximum
+    }
+  )
+}
+```
+
+```{r}
+set.seed(123)
+
+B <- 5000
+
+beta_sim_roll <- replicate(
+  B,
+  simulate_rolling_iid(
+    q_generate = q_hat,
+    daily_template = daily_roll,
+    window_days = window_days,
+    eval_start = eval_start
+  )
+)
+
+beta_sim_roll <- t(
+  beta_sim_roll
+)
+
+colnames(beta_sim_roll) <-
+  paste0("L", window_days)
+
+beta_sim_roll <- beta_sim_roll[
+  complete.cases(beta_sim_roll),
+  ,
+  drop = FALSE
+]
+```
+
+### Monte Carlo p値
+
+```{r}
+result_roll <- map_dfr(
+  seq_along(window_days),
+  function(i) {
+
+    L <- window_days[i]
+
+    obs <- result_obs$beta_hat[
+      result_obs$L == L
+    ]
+
+    sim <- beta_sim_roll[, i]
+
+    p_positive <- (
+      sum(sim >= obs) + 1
+    ) / (
+      length(sim) + 1
+    )
+
+    p_negative <- (
+      sum(sim <= obs) + 1
+    ) / (
+      length(sim) + 1
+    )
+
+    tibble(
+      L = L,
+      beta_hat = obs,
+      exp_beta = exp(obs),
+
+      mean_beta_iid = mean(sim),
+
+      q025 = quantile(
+        sim,
+        0.025,
+        names = FALSE
+      ),
+
+      q975 = quantile(
+        sim,
+        0.975,
+        names = FALSE
+      ),
+
+      p_positive = p_positive,
+      p_negative = p_negative
+    )
+  }
+)
+
+result_roll
+```
+
+### 可視化
+
+```{r}
+beta_sim_long <- as_tibble(
+  beta_sim_roll
+) %>%
+  pivot_longer(
+    everything(),
+    names_to = "L",
+    values_to = "beta"
+  ) %>%
+  mutate(
+    L = as.integer(
+      str_remove(L, "L")
+    )
+  )
+
+ggplot(
+  beta_sim_long,
+  aes(x = beta)
+) +
+  geom_histogram(
+    bins = 50
+  ) +
+  geom_vline(
+    data = result_roll,
+    aes(
+      xintercept = beta_hat
+    ),
+    linetype = "dashed",
+    linewidth = 1
+  ) +
+  facet_wrap(
+    ~ L,
+    scales = "free_y",
+    labeller = labeller(
+      L = c(
+        `7` = "直近7日",
+        `14` = "直近14日"
+      )
+    )
+  ) +
+  theme_minimal() +
+  labs(
+    title = "有限記憶フィードバック係数の固定 iid 帰無分布",
+    subtitle = "破線：実データの推定値",
+    x = expression(hat(beta)),
+    y = "Simulation count"
+  )
+```
+
+# おまけ： 独立性の検定
+
+公称モデル 1:1:1:2:2:2 の構造を分解して検証
+
+
+## 分割表
+
+```{r}
+tab_2x3 <- df %>%
+  count(`2枠目`, `3枠目`) %>%
+  complete(
+    `2枠目` = c("A", "B"),
+    `3枠目` = c("A", "B", "C"),
+    fill = list(n = 0)
+  ) %>%
+  pivot_wider(
+    names_from = `3枠目`,
+    values_from = n
+  )
+
+tab_2x3
+```
+
+```{r}
+tab <- df %>%
+  count(`2枠目`, `3枠目`) %>%
+  complete(
+    `2枠目` = c("A", "B"),
+    `3枠目` = c("A", "B", "C"),
+    fill = list(n = 0)
+  ) %>%
+  pivot_wider(
+    names_from = `3枠目`,
+    values_from = n
+  ) %>%
+  column_to_rownames("2枠目") %>%
+  as.matrix()
+
+tab
+```
+
+## 条件付き比率を見る
+
+```{r}
+prop.table(
+  tab,
+  margin = 1
+)
+```
+
+## Pearson の独立性検定
+
+```{r}
+chi_ind <- chisq.test(tab)
+
+chi_ind
+```
+
+```{r}
+chi_ind$expected
+```
+
+（残差）
+
+```{r}
+chi_ind$stdres
+```
+
+
+## Monte Carlo
+
+```{r}
+set.seed(123)
+
+chi_ind_mc <- chisq.test(
+  tab,
+  simulate.p.value = TRUE,
+  B = 100000
+)
+
+chi_ind_mc
+```
+
+## 効果量
+
+```{r}
+N <- sum(tab)
+
+cramers_v <- sqrt(
+  unname(chi_ind$statistic) /
+    (
+      N *
+        min(
+          nrow(tab) - 1,
+          ncol(tab) - 1
+        )
+    )
+)
+
+cramers_v
+```
+
+## 可視化
+
+```{r}
+df_ind_plot <- df %>%
+  count(
+    `2枠目`,
+    `3枠目`,
+    name = "n"
+  ) %>%
+  complete(
+    `2枠目` = c("A", "B"),
+    `3枠目` = c("A", "B", "C"),
+    fill = list(n = 0)
+  ) %>%
+  group_by(`2枠目`) %>%
+  mutate(
+    ratio = n / sum(n)
+  ) %>%
+  ungroup()
+
+ggplot(
+  df_ind_plot,
+  aes(
+    x = `3枠目`,
+    y = ratio,
+    fill = `2枠目`
+  )
+) +
+  geom_col(
+    position = "dodge"
+  ) +
+  geom_hline(
+    yintercept = 1/3,
+    linetype = "dashed"
+  ) +
+  scale_y_continuous(
+    labels = scales::percent
+  ) +
+  theme_minimal() +
+  labs(
+    title = "2枠目ごとの3枠目出現割合",
+    subtitle = "破線：3枠目が一様 (1/3) の場合",
+    x = "3枠目",
+    y = "条件付き出現割合",
+    fill = "2枠目"
+  )
+```
+

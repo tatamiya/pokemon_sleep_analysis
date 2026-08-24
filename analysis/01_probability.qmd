@@ -1,0 +1,2201 @@
+---
+title: "食材パターン出現比率は一定か？"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    code-tools: true
+    df-print: paged
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+library(tidyverse)
+library(lubridate)
+library(scales)
+library(showtext)
+library(slider)
+library(patchwork)
+library(googlesheets4)
+
+knitr::opts_chunk$set(
+  fig.width = 12,
+  fig.height = 7,
+  dpi = 120
+)
+
+# Google Fontsから日本語フォント（Noto Sans JPなど）を追加
+font_add_google("Noto Sans JP", "noto")
+
+# showtextを有効化（これ以降の描画で適用される）
+showtext_auto()
+
+gs4_auth()
+```
+
+# データ
+
+## データ読み込み
+
+```{r}
+#| label: load-data
+
+sheet_url <- "SPREADSHEET_URL_REMOVED_BEFORE_PUBLICATION"
+
+df_org <- read_sheet(sheet_url,
+  sheet = "記録一覧"
+                     )
+
+glimpse(df_org)
+```
+
+```{r}
+df <- df_org %>%
+  filter(is.na(`収集開始前分`)) %>%
+  filter(is.na(`2枠種フラグ`))
+
+# 2枠種含む
+df2 <- df_org %>%
+  filter(is.na(`収集開始前分`))
+```
+
+
+# パターンごとの出現頻度と出現割合
+
+```{r}
+patterns <- c(
+  "AAA", "AAB", "AAC",
+  "ABA", "ABB", "ABC"
+)
+
+slot2_levels <- c("A", "B")
+slot3_levels <- c("A", "B", "C")
+
+# 通説上の確率
+q_pattern <- c(
+  AAA = 1/9,
+  AAB = 1/9,
+  AAC = 1/9,
+  ABA = 2/9,
+  ABB = 2/9,
+  ABC = 2/9
+)
+
+q_slot2 <- c(
+  A = 1/3,
+  B = 2/3
+)
+
+q_slot3 <- c(
+  A = 1/3,
+  B = 1/3,
+  C = 1/3
+)
+```
+
+## 2枠目
+
+（2枠種も含める）
+
+```{r}
+summary_slot2 <- df2 %>%
+  filter(`2枠目` %in% slot2_levels) %>%
+  mutate(
+    `2枠目` = factor(
+      `2枠目`,
+      levels = slot2_levels
+    )
+  ) %>%
+  count(
+    `2枠目`,
+    name = "出現数"
+  ) %>%
+  complete(
+    `2枠目` = factor(
+      slot2_levels,
+      levels = slot2_levels
+    ),
+    fill = list(
+      出現数 = 0
+    )
+  ) %>%
+  mutate(
+    出現割合 = 出現数 / sum(出現数),
+    期待割合 = q_slot2[
+      as.character(`2枠目`)
+    ]
+  )
+
+summary_slot2 %>%
+  mutate(
+    出現割合 = scales::percent(
+      出現割合,
+      accuracy = 0.1
+    ),
+    期待割合 = scales::percent(
+      期待割合,
+      accuracy = 0.1
+    )
+  ) %>%
+  knitr::kable()
+```
+```{r}
+ggplot(
+  summary_slot2,
+  aes(
+    x = `2枠目`,
+    y = 出現割合
+  )
+) +
+  geom_col(
+    width = 0.7
+  ) +
+  geom_point(
+    aes(
+      y = 期待割合
+    ),
+    size = 3,
+    shape = 4
+  ) +
+  scale_y_continuous(
+    labels = scales::percent
+  ) +
+  theme_minimal() +
+  labs(
+    title = "2枠目の出現割合",
+    subtitle = "×：通説上の確率（A = 1/3, B = 2/3）",
+    x = "2枠目",
+    y = "出現割合"
+  )
+```
+
+
+## 3枠目
+
+```{r}
+summary_slot3 <- df %>%
+  filter(`3枠目` %in% slot3_levels) %>%
+  mutate(
+    `3枠目` = factor(
+      `3枠目`,
+      levels = slot3_levels
+    )
+  ) %>%
+  count(
+    `3枠目`,
+    name = "出現数"
+  ) %>%
+  complete(
+    `3枠目` = factor(
+      slot3_levels,
+      levels = slot3_levels
+    ),
+    fill = list(
+      出現数 = 0
+    )
+  ) %>%
+  mutate(
+    出現割合 = 出現数 / sum(出現数),
+    期待割合 = q_slot3[
+      as.character(`3枠目`)
+    ]
+  )
+
+summary_slot3 %>%
+  mutate(
+    出現割合 = scales::percent(
+      出現割合,
+      accuracy = 0.1
+    ),
+    期待割合 = scales::percent(
+      期待割合,
+      accuracy = 0.1
+    )
+  ) %>%
+  knitr::kable()
+```
+
+```{r}
+ggplot(
+  summary_slot3,
+  aes(
+    x = `3枠目`,
+    y = 出現割合
+  )
+) +
+  geom_col(
+    width = 0.7
+  ) +
+  geom_hline(
+    yintercept = 1/3,
+    linetype = "dashed"
+  ) +
+  scale_y_continuous(
+    labels = scales::percent
+  ) +
+  theme_minimal() +
+  labs(
+    title = "3枠目の出現割合",
+    subtitle = "破線：通説上の確率（各 1/3）",
+    x = "3枠目",
+    y = "出現割合"
+  )
+```
+
+## 全体
+
+```{r}
+summary_pattern <- df %>%
+  filter(
+    `食材パターン` %in% patterns
+  ) %>%
+  mutate(
+    `食材パターン` = factor(
+      `食材パターン`,
+      levels = patterns
+    )
+  ) %>%
+  count(
+    `食材パターン`,
+    name = "出現数"
+  ) %>%
+  complete(
+    `食材パターン` = factor(
+      patterns,
+      levels = patterns
+    ),
+    fill = list(
+      出現数 = 0
+    )
+  ) %>%
+  mutate(
+    出現割合 = 出現数 / sum(出現数),
+    期待割合 = q_pattern[
+      as.character(`食材パターン`)
+    ]
+  )
+
+summary_pattern %>%
+  mutate(
+    出現割合 = scales::percent(
+      出現割合,
+      accuracy = 0.1
+    ),
+    期待割合 = scales::percent(
+      期待割合,
+      accuracy = 0.1
+    )
+  ) %>%
+  knitr::kable()
+```
+```{r}
+ggplot(
+  summary_pattern,
+  aes(
+    x = `食材パターン`,
+    y = 出現割合
+  )
+) +
+  geom_col(
+    width = 0.7
+  ) +
+  geom_point(
+    aes(
+      y = 期待割合
+    ),
+    size = 3,
+    shape = 4
+  ) +
+  scale_y_continuous(
+    labels = scales::percent
+  ) +
+  theme_minimal() +
+  labs(
+    title = "食材パターンごとの出現割合",
+    subtitle = "×：通説上の 1:1:1:2:2:2 モデル",
+    x = "食材パターン",
+    y = "出現割合"
+  )
+```
+
+
+## 2枠目条件付き3枠目
+
+```{r}
+summary_conditional_slot3 <- df %>%
+  filter(
+    `2枠目` %in% slot2_levels,
+    `3枠目` %in% slot3_levels
+  ) %>%
+  mutate(
+    `2枠目` = factor(
+      `2枠目`,
+      levels = slot2_levels
+    ),
+    `3枠目` = factor(
+      `3枠目`,
+      levels = slot3_levels
+    )
+  ) %>%
+  count(
+    `2枠目`,
+    `3枠目`,
+    name = "出現数"
+  ) %>%
+  complete(
+    `2枠目` = factor(
+      slot2_levels,
+      levels = slot2_levels
+    ),
+    `3枠目` = factor(
+      slot3_levels,
+      levels = slot3_levels
+    ),
+    fill = list(
+      出現数 = 0
+    )
+  ) %>%
+  group_by(`2枠目`) %>%
+  mutate(
+    出現割合 = 出現数 / sum(出現数)
+  ) %>%
+  ungroup()
+
+summary_conditional_slot3 %>%
+  mutate(
+    出現割合 = scales::percent(
+      出現割合,
+      accuracy = 0.1
+    )
+  ) %>%
+  knitr::kable()
+```
+```{r}
+ggplot(
+  summary_conditional_slot3,
+  aes(
+    x = `3枠目`,
+    y = 出現割合
+  )
+) +
+  geom_col(
+    width = 0.7
+  ) +
+  geom_hline(
+    yintercept = 1/3,
+    linetype = "dashed"
+  ) +
+  facet_wrap(
+    vars(`2枠目`)
+  ) +
+  scale_y_continuous(
+    labels = scales::percent
+  ) +
+  theme_minimal() +
+  labs(
+    title = "2枠目条件付きの3枠目出現割合",
+    subtitle = "破線：3枠目が一様（各 1/3）の場合",
+    x = "3枠目",
+    y = "条件付き出現割合"
+  )
+```
+
+
+# 検定
+
+## 通説の 1:1:1:2:2:2 モデルと矛盾しないか？
+
+```{r}
+obs_pattern <- summary_pattern$出現数
+
+names(obs_pattern) <- as.character(
+  summary_pattern$`食材パターン`
+)
+
+chi_pattern <- chisq.test(
+  x = obs_pattern,
+  p = unname(q_pattern)
+)
+
+chi_pattern
+```
+
+期待度数と残差も確認する。
+
+```{r}
+result_pattern_gof <- tibble(
+  食材パターン = names(obs_pattern),
+  実測度数 = as.numeric(obs_pattern),
+  期待度数 = as.numeric(
+    chi_pattern$expected
+  ),
+  Pearson残差 = as.numeric(
+    chi_pattern$residuals
+  ),
+  標準化残差 = as.numeric(
+    chi_pattern$stdres
+  )
+)
+
+result_pattern_gof %>%
+  knitr::kable(
+    digits = 3
+  )
+```
+念のため、同じ Pearson 統計量について固定 multinomial モデルから Monte Carlo でも評価する。
+
+```{r}
+set.seed(12345)
+
+B <- 100000
+
+N_pattern <- sum(obs_pattern)
+
+expected_pattern <- (
+  N_pattern *
+    unname(q_pattern)
+)
+
+chi_obs_pattern <- unname(
+  chi_pattern$statistic
+)
+
+sim_pattern <- rmultinom(
+  n = B,
+  size = N_pattern,
+  prob = unname(q_pattern)
+)
+
+chi_sim_pattern <- colSums(
+  (
+    sim_pattern -
+      expected_pattern
+  )^2 /
+    expected_pattern
+)
+
+p_mc_pattern <- (
+  sum(
+    chi_sim_pattern >=
+      chi_obs_pattern
+  ) +
+    1
+) / (
+  B + 1
+)
+
+tibble(
+  Pearson統計量 = chi_obs_pattern,
+  漸近p値 = chi_pattern$p.value,
+  Monte_Carlo_p値 = p_mc_pattern
+) %>%
+  knitr::kable(
+    digits = 4
+  )
+```
+
+```{r}
+ggplot(
+  tibble(
+    statistic = chi_sim_pattern
+  ),
+  aes(
+    x = statistic
+  )
+) +
+  geom_histogram(
+    bins = 50
+  ) +
+  geom_vline(
+    xintercept = chi_obs_pattern,
+    linetype = "dashed"
+  ) +
+  theme_minimal() +
+  labs(
+    title = "1:1:1:2:2:2 モデル下の Pearson 統計量",
+    subtitle = "破線：実データ",
+    x = "Pearson statistic",
+    y = "Simulation count"
+  )
+```
+
+## 2枠目はA:B = 1:2か？
+
+2枠目について、通説では A と B の出現確率はそれぞれ
+
+$$
+P(A)=\frac{1}{3},
+\qquad
+P(B)=\frac{2}{3}
+$$
+
+とされている。
+
+そこで、帰無仮説を
+
+$$
+H_0:
+P(A)=\frac{1}{3}
+$$
+
+として二項検定を行う。
+
+```{r}
+# 2枠目 A の出現数
+n_slot2 <- sum(summary_slot2$出現数)
+
+x_slot2_A <- summary_slot2 %>%
+  filter(`2枠目` == "A") %>%
+  pull(出現数)
+
+# exact binomial test
+binom_slot2 <- binom.test(
+  x = x_slot2_A,
+  n = n_slot2,
+  p = 1/3,
+  alternative = "two.sided"
+)
+
+binom_slot2
+```
+
+実測値と理論値を表にまとめる。
+
+```{r}
+result_slot2_gof <- summary_slot2 %>%
+  transmute(
+    `2枠目`,
+    実測度数 = 出現数,
+    実測割合 = 出現数 / sum(出現数),
+    期待度数 = sum(出現数) * q_slot2[
+      as.character(`2枠目`)
+    ],
+    理論値 = q_slot2[
+      as.character(`2枠目`)
+    ]
+  )
+
+result_slot2_gof %>%
+  mutate(
+    across(
+      c(
+        実測割合,
+        理論値
+      ),
+      ~ scales::percent(
+        .x,
+        accuracy = 0.1
+      )
+    )
+  ) %>%
+  knitr::kable(
+    digits = 2
+  )
+```
+
+検定結果をまとめる。
+
+```{r}
+tibble(
+  A出現数 = x_slot2_A,
+  サンプルサイズ = n_slot2,
+  A実測割合 = x_slot2_A / n_slot2,
+  A理論値 = 1/3,
+  p値 = binom_slot2$p.value
+) %>%
+  mutate(
+    across(
+      c(
+        A実測割合,
+        A理論値
+      ),
+      ~ scales::percent(
+        .x,
+        accuracy = 0.1
+      )
+    )
+  ) %>%
+  knitr::kable(
+    digits = 4
+  )
+```
+
+現在のデータでは、2枠目Aは
+`r x_slot2_A` / `r n_slot2` =
+`r scales::percent(x_slot2_A / n_slot2, accuracy = 0.1)`
+であり、通説上の 33.3% より低い。
+
+二項検定の結果は
+
+$$
+p \approx `r sprintf("%.3f", binom_slot2$p.value)`
+$$
+
+となるため、5%水準では帰無仮説 $P(A)=1/3$ は棄却される。
+
+ただし、差はそれほど大きくなく、境界的な結果でもある。後述するベイズ推定もあわせて、真の出現確率がどの程度の範囲にありそうかを確認する。
+
+
+## 3枠目はA:B:C = 1:1:1か？
+
+3枠目について、通説では A、B、C の出現確率はいずれも
+
+$$
+P(A)=P(B)=P(C)=\frac{1}{3}
+$$
+
+とされている。
+
+そこで、帰無仮説を
+
+$$
+H_0:
+\boldsymbol{p}
+=
+\left(
+\frac{1}{3},
+\frac{1}{3},
+\frac{1}{3}
+\right)
+$$
+
+として、Pearsonの適合度検定を行う。
+
+```{r}
+obs_slot3 <- summary_slot3$出現数
+
+names(obs_slot3) <- as.character(
+  summary_slot3$`3枠目`
+)
+
+chi_slot3 <- chisq.test(
+  x = obs_slot3,
+  p = c(
+    1/3,
+    1/3,
+    1/3
+  )
+)
+
+chi_slot3
+```
+
+実測度数、期待度数、Pearson残差を確認する。
+
+```{r}
+result_slot3_gof <- tibble(
+  `3枠目` = names(obs_slot3),
+  実測度数 = as.numeric(
+    obs_slot3
+  ),
+  実測割合 = as.numeric(
+    obs_slot3
+  ) / sum(obs_slot3),
+  期待度数 = as.numeric(
+    chi_slot3$expected
+  ),
+  理論値 = 1/3,
+  Pearson残差 = as.numeric(
+    chi_slot3$residuals
+  )
+)
+
+result_slot3_gof %>%
+  mutate(
+    across(
+      c(
+        実測割合,
+        理論値
+      ),
+      ~ scales::percent(
+        .x,
+        accuracy = 0.1
+      )
+    )
+  ) %>%
+  knitr::kable(
+    digits = 3
+  )
+```
+
+検定結果をまとめる。
+
+```{r}
+tibble(
+  Pearson統計量 = unname(
+    chi_slot3$statistic
+  ),
+  自由度 = unname(
+    chi_slot3$parameter
+  ),
+  p値 = chi_slot3$p.value
+) %>%
+  knitr::kable(
+    digits = 4
+  )
+```
+
+現在のデータでは、
+
+- A: `r obs_slot3["A"]` / `r sum(obs_slot3)` = `r scales::percent(obs_slot3["A"] / sum(obs_slot3), accuracy = 0.1)`
+- B: `r obs_slot3["B"]` / `r sum(obs_slot3)` = `r scales::percent(obs_slot3["B"] / sum(obs_slot3), accuracy = 0.1)`
+- C: `r obs_slot3["C"]` / `r sum(obs_slot3)` = `r scales::percent(obs_slot3["C"] / sum(obs_slot3), accuracy = 0.1)`
+
+となっている。
+
+Pearsonの適合度検定では
+
+$$
+X^2 \approx `r sprintf("%.3f", unname(chi_slot3$statistic))`,
+\qquad
+df = `r unname(chi_slot3$parameter)`,
+\qquad
+p \approx `r sprintf("%.3f", chi_slot3$p.value)`
+$$
+
+であり、A、B、C がそれぞれ $1/3$ で出現するというモデルと
+矛盾する結果は得られなかった。
+
+## 2枠目と3枠目は独立か？
+
+帰無仮説を
+
+$$
+H_0:
+P(
+\text{2枠目},
+\text{3枠目}
+)
+=
+P(
+\text{2枠目}
+)
+P(
+\text{3枠目}
+)
+$$
+
+とする。
+
+```{r}
+df_independence <- df %>%
+  filter(
+    `2枠目` %in% slot2_levels,
+    `3枠目` %in% slot3_levels
+  ) %>%
+  mutate(
+    `2枠目` = factor(
+      `2枠目`,
+      levels = slot2_levels
+    ),
+    `3枠目` = factor(
+      `3枠目`,
+      levels = slot3_levels
+    )
+  )
+
+tab_slot2_slot3 <- xtabs(
+  ~ `2枠目` + `3枠目`,
+  data = df_independence
+)
+
+tab_slot2_slot3
+```
+
+```{r}
+chi_independence <- chisq.test(
+  tab_slot2_slot3
+)
+
+chi_independence
+```
+
+期待度数：
+
+```{r}
+chi_independence$expected
+```
+
+標準化残差：
+
+```{r}
+chi_independence$stdres
+```
+
+Monte Carlo でも確認する。
+
+```{r}
+set.seed(12345)
+
+chi_independence_mc <- chisq.test(
+  tab_slot2_slot3,
+  simulate.p.value = TRUE,
+  B = 100000
+)
+
+chi_independence_mc
+```
+効果量として Cramér's $V$ も計算する。
+
+```{r}
+N_independence <- sum(
+  tab_slot2_slot3
+)
+
+cramers_v <- sqrt(
+  unname(
+    chi_independence$statistic
+  ) /
+    (
+      N_independence *
+        min(
+          nrow(
+            tab_slot2_slot3
+          ) - 1,
+          ncol(
+            tab_slot2_slot3
+          ) - 1
+        )
+    )
+)
+
+tibble(
+  Pearson統計量 = unname(
+    chi_independence$statistic
+  ),
+  自由度 = unname(
+    chi_independence$parameter
+  ),
+  漸近p値 = chi_independence$p.value,
+  Monte_Carlo_p値 =
+    chi_independence_mc$p.value,
+  Cramers_V = cramers_v
+) %>%
+  knitr::kable(
+    digits = 4
+  )
+```
+
+
+# 確率を推定する（ベイズ推定）
+
+## 2枠目
+
+```{r}
+# 1. データの読み込みとカウント
+# 2枠種も含めた集計対象データ df2 を使用
+second_patterns <- c("A", "B")
+
+observed_counts_second <- df2 %>%
+  count(`2枠目`) %>%
+  complete(
+    `2枠目` = second_patterns,
+    fill = list(n = 0)
+  )
+
+# 2. ベイズ更新
+# 事前分布: Dirichlet(1, 1)
+prior_alpha <- 1
+
+observed_vector <- observed_counts_second$n
+post_alpha <- prior_alpha + observed_vector
+sum_post_alpha <- sum(post_alpha)
+
+# 3. 事後分布の要約表
+posterior_summary_second <- tibble(
+  `2枠目` = second_patterns,
+  実測数 = observed_vector,
+  実測割合 = observed_vector / sum(observed_vector),
+  事後平均 = post_alpha / sum_post_alpha,
+  信用区間下限 = map_dbl(
+    seq_along(second_patterns),
+    function(i) {
+      qbeta(
+        0.025,
+        shape1 = post_alpha[i],
+        shape2 = sum_post_alpha - post_alpha[i]
+      )
+    }
+  ),
+  信用区間上限 = map_dbl(
+    seq_along(second_patterns),
+    function(i) {
+      qbeta(
+        0.975,
+        shape1 = post_alpha[i],
+        shape2 = sum_post_alpha - post_alpha[i]
+      )
+    }
+  ),
+  理論値 = c(
+    1/3,
+    2/3
+  )
+) %>%
+  mutate(
+    `P(p < 理論値 | data)` = map_dbl(
+      seq_along(second_patterns),
+      function(i) {
+        pbeta(
+          理論値[i],
+          shape1 = post_alpha[i],
+          shape2 = sum_post_alpha - post_alpha[i]
+        )
+      }
+    )
+  )
+
+posterior_summary_second %>%
+  mutate(
+    across(
+      c(
+        実測割合,
+        事後平均,
+        信用区間下限,
+        信用区間上限,
+        理論値,
+        `P(p < 理論値 | data)`
+      ),
+      ~ scales::percent(
+        .x,
+        accuracy = 0.1
+      )
+    )
+  ) %>%
+  knitr::kable(
+    align = c(
+      "l",
+      "r",
+      "r",
+      "r",
+      "r",
+      "r",
+      "r",
+      "r"
+    )
+  )
+
+# 4. 作図用データ
+x_seq <- seq(
+  0,
+  1,
+  length.out = 500
+)
+
+dist_data <- lapply(
+  seq_along(second_patterns),
+  function(i) {
+
+    pattern <- second_patterns[i]
+    a <- post_alpha[i]
+    b <- sum_post_alpha - a
+
+    data.frame(
+      second_ingredient = pattern,
+      x = x_seq,
+      density = dbeta(
+        x_seq,
+        a,
+        b
+      )
+    )
+  }
+) %>%
+  bind_rows()
+
+# 通説上の理論値
+theory_lines <- data.frame(
+  val = c(
+    1/3,
+    2/3
+  )
+)
+
+# 5. 可視化
+showtext_auto()
+
+ggplot(
+  dist_data,
+  aes(
+    x = x,
+    y = density,
+    color = second_ingredient,
+    fill = second_ingredient
+  )
+) +
+  geom_area(
+    alpha = 0.1,
+    position = "identity"
+  ) +
+  geom_line(
+    linewidth = 1
+  ) +
+  geom_vline(
+    data = data.frame(
+      second_ingredient = second_patterns,
+      mean_val = post_alpha / sum_post_alpha
+    ),
+    aes(
+      xintercept = mean_val,
+      color = second_ingredient
+    ),
+    linetype = "dashed",
+    alpha = 0.5
+  ) +
+  geom_vline(
+    data = theory_lines,
+    aes(
+      xintercept = val
+    ),
+    linetype = "dotted",
+    color = "black",
+    linewidth = 0.8,
+    alpha = 0.6
+  ) +
+  scale_x_continuous(
+    labels = scales::percent,
+    breaks = seq(
+      0,
+      1,
+      0.1
+    )
+  ) +
+  labs(
+    title = "食材パターン2枠目出現確率の事後分布（ベイズ推定）",
+    subtitle = paste0(
+      "事前分布: Dirichlet(1,1), サンプルサイズ N = ",
+      sum(observed_vector)
+    ),
+    x = "出現確率",
+    y = "確率密度",
+    caption = "破線：事後平均、点線：通説上の理論値"
+  ) +
+  theme_minimal(
+    base_family = "noto"
+  ) +
+  theme(
+    legend.position = "right",
+    panel.grid.minor = element_blank()
+  )
+```
+## 3枠目
+
+```{r}
+# 1. データの読み込みとカウント
+# 2枠種を除外した集計対象データ df を使用
+third_patterns <- c(
+  "A",
+  "B",
+  "C"
+)
+
+observed_counts_third <- df %>%
+  count(`3枠目`) %>%
+  complete(
+    `3枠目` = third_patterns,
+    fill = list(n = 0)
+  )
+
+# 2. ベイズ更新
+# 事前分布: Dirichlet(1, 1, 1)
+prior_alpha <- 1
+
+observed_vector <- observed_counts_third$n
+post_alpha <- prior_alpha + observed_vector
+sum_post_alpha <- sum(post_alpha)
+
+# 3. 事後分布の要約表
+posterior_summary_third <- tibble(
+  `3枠目` = third_patterns,
+  実測数 = observed_vector,
+  実測割合 = observed_vector / sum(observed_vector),
+  事後平均 = post_alpha / sum_post_alpha,
+  信用区間下限 = map_dbl(
+    seq_along(third_patterns),
+    function(i) {
+      qbeta(
+        0.025,
+        shape1 = post_alpha[i],
+        shape2 = sum_post_alpha - post_alpha[i]
+      )
+    }
+  ),
+  信用区間上限 = map_dbl(
+    seq_along(third_patterns),
+    function(i) {
+      qbeta(
+        0.975,
+        shape1 = post_alpha[i],
+        shape2 = sum_post_alpha - post_alpha[i]
+      )
+    }
+  ),
+  理論値 = rep(
+    1/3,
+    length(third_patterns)
+  )
+)
+
+posterior_summary_third %>%
+  mutate(
+    across(
+      c(
+        実測割合,
+        事後平均,
+        信用区間下限,
+        信用区間上限,
+        理論値
+      ),
+      ~ scales::percent(
+        .x,
+        accuracy = 0.1
+      )
+    )
+  ) %>%
+  knitr::kable(
+    align = c(
+      "l",
+      "r",
+      "r",
+      "r",
+      "r",
+      "r",
+      "r"
+    )
+  )
+
+# 4. 作図用データ
+x_seq <- seq(
+  0,
+  1,
+  length.out = 500
+)
+
+dist_data <- lapply(
+  seq_along(third_patterns),
+  function(i) {
+
+    pattern <- third_patterns[i]
+    a <- post_alpha[i]
+    b <- sum_post_alpha - a
+
+    data.frame(
+      third_ingredient = pattern,
+      x = x_seq,
+      density = dbeta(
+        x_seq,
+        a,
+        b
+      )
+    )
+  }
+) %>%
+  bind_rows()
+
+# 通説上の理論値
+# 3枠とも同じなので線は1本だけでよい
+theory_lines <- data.frame(
+  val = 1/3
+)
+
+# 5. 可視化
+showtext_auto()
+
+ggplot(
+  dist_data,
+  aes(
+    x = x,
+    y = density,
+    color = third_ingredient,
+    fill = third_ingredient
+  )
+) +
+  geom_area(
+    alpha = 0.1,
+    position = "identity"
+  ) +
+  geom_line(
+    linewidth = 1
+  ) +
+  geom_vline(
+    data = data.frame(
+      third_ingredient = third_patterns,
+      mean_val = post_alpha / sum_post_alpha
+    ),
+    aes(
+      xintercept = mean_val,
+      color = third_ingredient
+    ),
+    linetype = "dashed",
+    alpha = 0.5
+  ) +
+  geom_vline(
+    data = theory_lines,
+    aes(
+      xintercept = val
+    ),
+    linetype = "dotted",
+    color = "black",
+    linewidth = 0.8,
+    alpha = 0.6
+  ) +
+  scale_x_continuous(
+    labels = scales::percent,
+    breaks = seq(
+      0,
+      1,
+      0.1
+    )
+  ) +
+  labs(
+    title = "食材パターン3枠目出現確率の事後分布（ベイズ推定）",
+    subtitle = paste0(
+      "事前分布: Dirichlet(1,1,1), サンプルサイズ N = ",
+      sum(observed_vector)
+    ),
+    x = "出現確率",
+    y = "確率密度",
+    caption = "破線：事後平均、点線：通説上の理論値"
+  ) +
+  theme_minimal(
+    base_family = "noto"
+  ) +
+  theme(
+    legend.position = "right",
+    panel.grid.minor = element_blank()
+  )
+```
+
+## 全パターン
+
+```{r}
+# 1. データの読み込みとカウント
+# 2枠種を除外した集計対象データ df を使用
+patterns_all <- c(
+  "AAA",
+  "AAB",
+  "AAC",
+  "ABA",
+  "ABB",
+  "ABC"
+)
+
+observed_counts <- df %>%
+  count(食材パターン) %>%
+  complete(
+    食材パターン = patterns_all,
+    fill = list(n = 0)
+  )
+
+# 2. ベイズ更新
+# 事前分布: Dirichlet(1, 1, 1, 1, 1, 1)
+prior_alpha <- 1
+
+observed_vector <- observed_counts$n
+post_alpha <- prior_alpha + observed_vector
+sum_post_alpha <- sum(post_alpha)
+
+# 3. 事後分布の要約表
+posterior_summary_all <- tibble(
+  食材パターン = patterns_all,
+  実測数 = observed_vector,
+  実測割合 = observed_vector / sum(observed_vector),
+  事後平均 = post_alpha / sum_post_alpha,
+  信用区間下限 = map_dbl(
+    seq_along(patterns_all),
+    function(i) {
+      qbeta(
+        0.025,
+        shape1 = post_alpha[i],
+        shape2 = sum_post_alpha - post_alpha[i]
+      )
+    }
+  ),
+  信用区間上限 = map_dbl(
+    seq_along(patterns_all),
+    function(i) {
+      qbeta(
+        0.975,
+        shape1 = post_alpha[i],
+        shape2 = sum_post_alpha - post_alpha[i]
+      )
+    }
+  ),
+  理論値 = c(
+    1/9,
+    1/9,
+    1/9,
+    2/9,
+    2/9,
+    2/9
+  )
+)
+
+posterior_summary_all %>%
+  mutate(
+    across(
+      c(
+        実測割合,
+        事後平均,
+        信用区間下限,
+        信用区間上限,
+        理論値
+      ),
+      ~ scales::percent(
+        .x,
+        accuracy = 0.1
+      )
+    )
+  ) %>%
+  knitr::kable(
+    align = c(
+      "l",
+      "r",
+      "r",
+      "r",
+      "r",
+      "r",
+      "r"
+    )
+  )
+
+# 4. 作図用データ
+x_seq <- seq(
+  0,
+  0.45,
+  length.out = 500
+)
+
+dist_data <- lapply(
+  seq_along(patterns_all),
+  function(i) {
+
+    pattern <- patterns_all[i]
+    a <- post_alpha[i]
+    b <- sum_post_alpha - a
+
+    data.frame(
+      食材パターン = pattern,
+      x = x_seq,
+      density = dbeta(
+        x_seq,
+        a,
+        b
+      )
+    )
+  }
+) %>%
+  bind_rows()
+
+# 通説上の理論値
+theory_lines <- data.frame(
+  val = c(
+    1/9,
+    2/9
+  )
+)
+
+# 5. 可視化
+showtext_auto()
+
+ggplot(
+  dist_data,
+  aes(
+    x = x,
+    y = density,
+    color = 食材パターン,
+    fill = 食材パターン
+  )
+) +
+  geom_area(
+    alpha = 0.1,
+    position = "identity"
+  ) +
+  geom_line(
+    linewidth = 1
+  ) +
+  geom_vline(
+    data = data.frame(
+      食材パターン = patterns_all,
+      mean_val = post_alpha / sum_post_alpha
+    ),
+    aes(
+      xintercept = mean_val,
+      color = 食材パターン
+    ),
+    linetype = "dashed",
+    alpha = 0.5
+  ) +
+  geom_vline(
+    data = theory_lines,
+    aes(
+      xintercept = val
+    ),
+    linetype = "dotted",
+    color = "black",
+    linewidth = 0.8,
+    alpha = 0.6
+  ) +
+  scale_x_continuous(
+    labels = scales::percent,
+    breaks = seq(
+      0,
+      0.5,
+      0.1
+    )
+  ) +
+  labs(
+    title = "食材パターン出現確率の事後分布（ベイズ推定）",
+    subtitle = paste0(
+      "事前分布: Dirichlet(1,1,1,1,1,1), サンプルサイズ N = ",
+      sum(observed_vector)
+    ),
+    x = "出現確率",
+    y = "確率密度",
+    caption = "破線：事後平均、点線：通説上の理論値"
+  ) +
+  theme_minimal(
+    base_family = "noto"
+  ) +
+  theme(
+    legend.position = "right",
+    panel.grid.minor = element_blank()
+  )
+```
+
+
+# 週単位のパターン別出現率
+
+```{r}
+df_week <- df %>%
+  mutate(週 = floor_date(as.Date(日付), unit = "week", week_start = 2)) %>% # 火曜日始まり。月曜日の睡眠分の記録は火曜日の日付でつくため。
+  filter(週 >= as.Date("2025-11-17")) # 2025-11-10週のデータは1件しかないため除外
+
+df_week2 <- df2 %>%
+  mutate(週 = floor_date(as.Date(日付), unit = "week", week_start = 2)) %>% # 火曜日始まり。月曜日の睡眠分の記録は火曜日の日付でつくため。
+  filter(週 >= as.Date("2025-11-17")) # 2025-11-10週のデータは1件しかないため除外
+
+glimpse(df_week)
+```
+
+## 2枠目
+```{r}
+
+
+# Prepare data for stacked bar chart (counts)
+counts_2枠目 <- df_week2 %>%
+  group_by(週, `2枠目`) %>%
+  summarise(count = n(), .groups = 'drop') %>%
+  complete(週, `2枠目`, fill = list(count = 0)) %>%
+  group_by(週) %>%
+  mutate(ratio = count / sum(count)) %>%
+  ungroup()
+
+# Draw stacked bar chart of counts
+print(ggplot(counts_2枠目, aes(x = 週, y = count, fill = `2枠目`)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Weekly Counts of 'A' and 'B' in 2枠目",
+       x = "Week",
+       y = "Count",
+       fill = "2枠目") +
+  theme_minimal())
+
+# Draw line chart of ratios (using previously calculated ratio_2枠目)
+print(ggplot(counts_2枠目, aes(x = 週, y = ratio, color = `2枠目`)) +
+  geom_line(linewidth = 1) + # Reverting to size
+  geom_point(size = 2) + # Reverting to size
+  labs(title = "Weekly Ratio of 'A' and 'B' in 2枠目",
+       x = "Week",
+       y = "Ratio",
+       color = "2枠目") +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1.0)) + # Y軸を%表記に
+  theme_minimal())
+```
+
+## 3枠目
+```{r}
+# ratio_3枠目 <- df %>%
+#   group_by(週) %>%
+#   count(`3枠目`) %>%
+#   mutate(ratio = n / sum(n)) %>%
+#   select(週, `3枠目`, ratio)
+
+# Prepare data for stacked bar chart (counts)
+counts_3枠目 <- df_week %>%
+  group_by(週, `3枠目`) %>%
+  summarise(count = n(), .groups = 'drop') %>%
+  complete(週, `3枠目`, fill = list(count = 0)) %>%
+  group_by(週) %>%
+  mutate(ratio = count / sum(count)) %>%
+  ungroup()
+
+# Draw stacked bar chart of counts
+print(ggplot(counts_3枠目, aes(x = 週, y = count, fill = `3枠目`)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Weekly Counts of 'A' and 'B' and 'C' in 3枠目",
+       x = "Week",
+       y = "Count",
+       fill = "3枠目") +
+  theme_minimal())
+
+# Draw line chart of ratios (using previously calculated ratio_3枠目)
+print(ggplot(counts_3枠目, aes(x = 週, y = ratio, color = `3枠目`)) +
+  geom_line(size = 1) + # Reverting to size
+  geom_point(size = 2) + # Reverting to size
+  labs(title = "Weekly Ratio of 'A' and 'B' and 'C' in 3枠目",
+       x = "Week",
+       y = "Ratio",
+       color = "3枠目") +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1.0)) + # Y軸を%表記に
+  theme_minimal())
+
+```
+
+## 全比較
+```{r}
+# Prepare data for stacked bar chart (counts)
+counts_all_pattern <- df_week %>%
+  # 1. まずは存在するデータだけでカウント
+  group_by(週, `食材パターン`) %>%
+  summarise(count = n(), .groups = 'drop') %>%
+
+  # 2. 全ての「週」と「食材パターン」の組み合わせを生成し、無い所を0で埋める
+  complete(週, `食材パターン`, fill = list(count = 0)) %>%
+
+  # 3. 0埋めした状態で、週ごとの比率を計算し直す
+  group_by(週) %>%
+  mutate(ratio = count / sum(count)) %>%
+  ungroup()
+
+# Draw stacked bar chart of counts
+print(ggplot(counts_all_pattern, aes(x = 週, y = count, fill = `食材パターン`)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Weekly Counts of 'A' and 'B' and 'C' in 3枠目",
+       x = "Week",
+       y = "Count",
+       fill = "食材パターン") +
+  theme_minimal())
+
+# Draw line chart of ratios (using previously calculated ratio_3枠目)
+print(ggplot(counts_all_pattern, aes(x = 週, y = ratio, color = `食材パターン`)) +
+  geom_line(size = 1) + # Reverting to size
+  geom_point(size = 2) + # Reverting to size
+  labs(title = "Weekly Ratio of 'A' and 'B' and 'C' in 3枠目",
+       x = "Week",
+       y = "Ratio",
+       color = "食材パターン") +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 0.7)) + # Y軸を%表記に
+  theme_minimal())
+
+```
+```{r}
+# 1. 週次集計とデータの整形
+df_plot <- df_week %>%
+  group_by(週, 食材パターン) %>%
+  summarise(count = n(), .groups = 'drop') %>%
+  # ゼロ埋め（前回お伝えした魔法の関数）
+  complete(週, 食材パターン, fill = list(count = 0)) %>%
+  # 週ごとの比率計算
+  group_by(週) %>%
+  mutate(ratio = count / sum(count)) %>%
+  ungroup() %>%
+  # 2枠目と3枠目を抽出して、グラフの行と列の変数を作る
+  mutate(
+    `2枠目` = substr(食材パターン, 2, 2),
+    `3枠目` = substr(食材パターン, 3, 3)
+  )
+
+# 2. 理論値（攻略サイト準拠モデル：1/9 or 2/9）と実測値の設定
+theoretical_ratios <- data.frame(
+  食材パターン = c("AAA", "AAB", "AAC", "ABA", "ABB", "ABC"),
+  theory = c(1/9, 1/9, 1/9, 2/9, 2/9, 2/9)
+)
+
+overall_ratios <- df %>%
+  count(食材パターン) %>%
+  mutate(overall_avg = n / sum(n)) %>%
+  dplyr::select(食材パターン, overall_avg)
+
+df_plot <- df_plot %>%
+  left_join(theoretical_ratios, by = "食材パターン") %>%
+  left_join(overall_ratios, by = "食材パターン")
+
+# 各パネルの左上に表示するためのラベル用データを作成
+df_label <- df_plot %>%
+  group_by(食材パターン, `2枠目`, `3枠目`) %>%
+  summarise(
+    x = min(週),  # X軸の左端（週の最小値）
+    y = 0.65,     # Y軸の上端付近（limitsの0.7より少し下）
+    .groups = 'drop'
+  )
+
+# 3. 描画（2行×3列のタイル配置）
+showtext_auto()
+
+ggplot(df_plot, aes(x = 週, y = ratio)) +
+  # 実測値（折れ線と点）
+  geom_line(color = "steelblue", size = 0.8) +
+  geom_point(color = "steelblue", size = 1.5) +
+
+
+  # A. 理論値（赤の点線：攻略サイトモデル）
+  geom_hline(aes(yintercept = theory), linetype = "dashed", color = "firebrick", alpha = 0.7) +
+
+  # B. 実測の期間全体平均（オレンジの点線：あなたの実績値）
+  geom_hline(aes(yintercept = overall_avg), linetype = "dotted", color = "darkorange", size = 0.8) +
+
+  # パターン名の表示
+  geom_label(
+    data = df_label,
+    aes(x = x, y = y, label = 食材パターン),
+    hjust = 0,             # 左寄せ
+    vjust = 1,             # 上寄せ
+    size = 4.5,            # ボックスに合わせて少し文字を小さく
+    fontface = "bold",
+    family = "noto",
+    color = "black",   # 文字色（黒）
+    fill = "white",        # ボックスの内側の色（白）
+    label.size = 0.6,      # 枠線の太さ
+    label.r = unit(0.15, "lines"), # 角の丸み（完全に四角なら 0 に）
+    alpha = 0.85           # 少し背景を透かせる（文字は見やすく、後ろの線が少し見える）
+  ) +
+
+  # タイル状に配置（行に2枠目、列に3枠目）
+  facet_grid(`2枠目` ~ `3枠目`, labeller = label_both) +
+  # 見た目の調整
+  scale_y_continuous(labels = scales::percent, limits = c(0, 0.7)) + # Y軸を%表記に
+  labs(
+    title = "食材パターン別 出現割合の週次推移",
+    subtitle = "青線：週次、赤破線：理論値、橙点線：実測全体平均",
+    x = "週（火曜始まり）",
+    y = "週内での出現割合"
+  ) +
+  theme_minimal(base_family = "noto") +
+  theme(
+    strip.background = element_rect(fill = "gray90"),
+    strip.text = element_text(size = 12, face = "bold"),
+    panel.spacing = unit(1, "lines")
+  )
+```
+
+# 月次集計
+
+```{r}
+df_month <- df %>%
+  mutate(月 = floor_date(as.Date(日付), unit = "month"))
+  # filter(月 >= as.Date("2025-12-01")) # 計測開始が2025-11-17からのため、12月開始とする
+
+df_month2 <- df2 %>%
+  mutate(月 = floor_date(as.Date(日付), unit = "month"))
+  # filter(月 >= as.Date("2025-12-01")) # 計測開始が2025-11-17からのため、12月開始とする
+
+glimpse(df_month)
+```
+
+## 2枠目
+
+```{r}
+# Prepare data for stacked bar chart (counts)
+counts_all_pattern <- df_month2 %>%
+  # 1. まずは存在するデータだけでカウント
+  group_by(月, `2枠目`) %>%
+  summarise(count = n(), .groups = 'drop') %>%
+
+  # 2. 全ての「月」と「食材パターン」の組み合わせを生成し、無い所を0で埋める
+  complete(月, `2枠目`, fill = list(count = 0)) %>%
+
+  # 3. 0埋めした状態で、月ごとの比率を計算し直す
+  group_by(月) %>%
+  mutate(ratio = count / sum(count)) %>%
+  ungroup()
+
+# Draw stacked bar chart of counts
+print(ggplot(counts_all_pattern, aes(x = 月, y = count, fill = `2枠目`)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Monthly Counts of 'A' and 'B' in 2枠目",
+       x = "Month",
+       y = "Count",
+       fill = "2枠目") +
+  theme_minimal())
+
+# Draw line chart of ratios (using previously calculated ratio_3枠目)
+print(ggplot(counts_all_pattern, aes(x = 月, y = ratio, color = `2枠目`)) +
+  geom_line(size = 1) + # Reverting to size
+  geom_hline(yintercept = c(2/3, 1/3), linetype = "dashed") +
+  geom_point(size = 2) + # Reverting to size
+  labs(title = "Monthly Ratio of 'A' and 'B' in 2枠目",
+       x = "Month",
+       y = "Ratio",
+       color = "2枠目") +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1.0)) + # Y軸を%表記に
+  theme_minimal())
+
+```
+
+## 3枠目
+```{r}
+# Prepare data for stacked bar chart (counts)
+counts_all_pattern <- df_month %>%
+  # 1. まずは存在するデータだけでカウント
+  group_by(月, `3枠目`) %>%
+  summarise(count = n(), .groups = 'drop') %>%
+
+  # 2. 全ての「月」と「食材パターン」の組み合わせを生成し、無い所を0で埋める
+  complete(月, `3枠目`, fill = list(count = 0)) %>%
+
+  # 3. 0埋めした状態で、月ごとの比率を計算し直す
+  group_by(月) %>%
+  mutate(ratio = count / sum(count)) %>%
+  ungroup()
+
+# Draw stacked bar chart of counts
+print(ggplot(counts_all_pattern, aes(x = 月, y = count, fill = `3枠目`)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Monthly Counts of 'A' and 'B' and 'C' in 3枠目",
+       x = "Month",
+       y = "Count",
+       fill = "3枠目") +
+  theme_minimal())
+
+# Draw line chart of ratios (using previously calculated ratio_3枠目)
+print(ggplot(counts_all_pattern, aes(x = 月, y = ratio, color = `3枠目`)) +
+  geom_line(size = 1) + # Reverting to size
+  geom_hline(yintercept = c(1/3), linetype = "dashed") +
+  geom_point(size = 2) + # Reverting to size
+  labs(title = "Monthly Ratio of 'A' and 'B' and 'C' in 3枠目",
+       x = "Month",
+       y = "Ratio",
+       color = "3枠目") +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 0.6)) + # Y軸を%表記に
+  theme_minimal())
+
+```
+
+## 全パターン
+
+```{r}
+# Prepare data for stacked bar chart (counts)
+counts_all_pattern <- df_month %>%
+  # 1. まずは存在するデータだけでカウント
+  group_by(月, `食材パターン`) %>%
+  summarise(count = n(), .groups = 'drop') %>%
+
+  # 2. 全ての「月」と「食材パターン」の組み合わせを生成し、無い所を0で埋める
+  complete(月, `食材パターン`, fill = list(count = 0)) %>%
+
+  # 3. 0埋めした状態で、月ごとの比率を計算し直す
+  group_by(月) %>%
+  mutate(ratio = count / sum(count)) %>%
+  ungroup()
+
+# Draw stacked bar chart of counts
+print(ggplot(counts_all_pattern, aes(x = 月, y = count, fill = `食材パターン`)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Monthly Counts of Ingredient Patterns",
+       x = "Month",
+       y = "Count",
+       fill = "食材パターン") +
+  theme_minimal())
+
+# Draw line chart of ratios (using previously calculated ratio_3枠目)
+print(ggplot(counts_all_pattern, aes(x = 月, y = ratio, color = `食材パターン`)) +
+  geom_line(size = 1) + # Reverting to size
+  geom_hline(yintercept = c(1/9, 2/9), linetype = "dashed") +
+  geom_point(size = 2) + # Reverting to size
+  labs(title = "Monthly Ratio of Ingredient Patterns",
+       x = "Month",
+       y = "Ratio",
+       color = "食材パターン") +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 0.4)) + # Y軸を%表記に
+  theme_minimal())
+
+```
+
+# 移動比率
+
+```{r}
+df_for_rolling <- df %>%
+  arrange(`日付`) %>%
+  mutate(
+    idx = row_number()
+  )
+
+plot_start <- min(df_for_rolling$`日付`) + lubridate::days(29)
+
+# 2枠種含む
+df_for_rolling2 <- df2 %>%
+  arrange(`日付`) %>%
+  mutate(
+    idx = row_number()
+  )
+```
+
+## 2枠目
+
+```{r}
+daily_second <- df_for_rolling2 %>%
+  count(`日付`, `2枠目`, name = "n") %>%
+  complete(
+    `日付` = seq(min(`日付`), max(`日付`), by = "day"),
+    `2枠目` = c("A", "B"),
+    fill = list(n = 0)
+  )
+
+roll_second_30d <- daily_second %>%
+  group_by(`2枠目`) %>%
+  arrange(`日付`, .by_group = TRUE) %>%
+  mutate(
+    roll_n = slide_index_dbl(
+      .x = n,
+      .i = `日付`,
+      .f = sum,
+      .before = days(29),
+      .complete = TRUE
+    )
+  ) %>%
+  ungroup() %>%
+  group_by(`日付`) %>%
+  mutate(
+    total_30d = sum(roll_n),
+    roll30d = if_else(total_30d > 0, roll_n / total_30d, NA_real_)
+  ) %>%
+  ungroup() %>%
+  filter(`日付` >= plot_start)
+
+ggplot(roll_second_30d, aes(x = `日付`, y = roll30d, color = `2枠目`)) +
+  geom_line() +
+  geom_hline(yintercept = c(1/3, 2/3), linetype = "dashed") +
+  scale_y_continuous(labels = percent) +
+  theme_minimal() +
+  labs(
+    title = "2枠目 A/B のローリング30日比率",
+    x = "日付",
+    y = "直近30日での比率",
+    color = "2枠目"
+  )
+```
+## 3枠目
+```{r}
+daily_third <- df_for_rolling %>%
+  count(`日付`, `3枠目`, name = "n") %>%
+  complete(
+    `日付` = seq(min(`日付`), max(`日付`), by = "day"),
+    `3枠目` = c("A", "B", "C"),
+    fill = list(n = 0)
+  )
+
+roll_third_30d <- daily_third %>%
+  group_by(`3枠目`) %>%
+  arrange(`日付`, .by_group = TRUE) %>%
+  mutate(
+    roll_n = slide_index_dbl(
+      .x = n,
+      .i = `日付`,
+      .f = sum,
+      .before = days(29),
+      .complete = FALSE
+    )
+  ) %>%
+  ungroup() %>%
+  group_by(`日付`) %>%
+  mutate(
+    total_30d = sum(roll_n),
+    roll30d = if_else(total_30d > 0, roll_n / total_30d, NA_real_)
+  ) %>%
+  ungroup() %>%
+  filter(`日付` >= plot_start)
+
+ggplot(roll_third_30d, aes(x = `日付`, y = roll30d, color = `3枠目`)) +
+  geom_line() +
+  geom_hline(yintercept = 1/3, linetype = "dashed") +
+  scale_y_continuous(labels = percent) +
+  theme_minimal() +
+  labs(
+    title = "3枠目 A/B/C のローリング30日比率",
+    x = "日付",
+    y = "直近30日での比率",
+    color = "3枠目"
+  )
+```
+
+```{r}
+daily_all <- df_for_rolling %>%
+  count(`日付`, `食材パターン`, name = "n") %>%
+  complete(
+    `日付` = seq(min(`日付`), max(`日付`), by = "day"),
+    `食材パターン` = c("AAA", "AAB", "AAC", "ABA", "ABB", "ABC"),
+    fill = list(n = 0)
+  )
+
+roll_all_30d <- daily_all %>%
+  group_by(`食材パターン`) %>%
+  arrange(`日付`, .by_group = TRUE) %>%
+  mutate(
+    roll_n = slide_index_dbl(
+      .x = n,
+      .i = `日付`,
+      .f = sum,
+      .before = days(29),
+      .complete = FALSE
+    )
+  ) %>%
+  ungroup() %>%
+  group_by(`日付`) %>%
+  mutate(
+    total_30d = sum(roll_n),
+    roll30d = if_else(total_30d > 0, roll_n / total_30d, NA_real_)
+  ) %>%
+  ungroup() %>%
+  filter(`日付` >= plot_start)
+
+ggplot(roll_all_30d, aes(x = `日付`, y = roll30d, color = `食材パターン`)) +
+  geom_line() +
+  geom_hline(yintercept = c(1/9, 2/9), linetype = "dashed") +
+  scale_y_continuous(labels = percent) +
+  theme_minimal() +
+  labs(
+    title = "食材パターンのローリング30日比率",
+    x = "日付",
+    y = "直近30日での比率",
+    color = "食材パターン"
+  )
+```
+## 3枠目（2枠目条件付き）
+
+```{r}
+options(
+  repr.plot.width = 14,
+  repr.plot.height = 7
+)
+
+daily_cond <- df_for_rolling %>%
+  count(`日付`, `2枠目`, `3枠目`, name = "n") %>%
+  complete(
+    `日付` = seq(min(`日付`), max(`日付`), by = "day"),
+    `2枠目` = c("A", "B"),
+    `3枠目` = c("A", "B", "C"),
+    fill = list(n = 0)
+  )
+
+roll_cond_30d <- daily_cond %>%
+  group_by(`2枠目`, `3枠目`) %>%
+  arrange(`日付`, .by_group = TRUE) %>%
+  mutate(
+    roll_n = slide_index_dbl(
+      .x = n,
+      .i = `日付`,
+      .f = sum,
+      .before = days(29),
+      .complete = FALSE
+    )
+  ) %>%
+  ungroup() %>%
+  group_by(`日付`, `2枠目`) %>%
+  mutate(
+    total_30d = sum(roll_n),
+    roll30d = if_else(
+      total_30d > 0,
+      roll_n / total_30d,
+      NA_real_
+    )
+  ) %>%
+  ungroup() %>%
+  filter(`日付` >= plot_start)
+
+ggplot(
+  roll_cond_30d,
+  aes(x = `日付`, y = roll30d, color = `3枠目`)
+) +
+  geom_line() +
+  geom_hline(
+    yintercept = 1 / 3,
+    linetype = "dashed"
+  ) +
+  facet_wrap(
+    ~ `2枠目`,
+    nrow = 1,
+    labeller = labeller(
+      `2枠目` = c(
+        A = "2枠目 A",
+        B = "2枠目 B"
+      )
+    )
+  ) +
+  scale_y_continuous(labels = percent) +
+  theme_minimal() +
+  labs(
+    title = "2枠目別・3枠目のローリング30日条件付き比率",
+    x = "日付",
+    y = "直近30日での条件付き比率",
+    color = "3枠目"
+  )
+```
+
+# 累積推移と累積偏差
+
+```{r}
+#library(patchwork)
+
+patterns <- c("AAA", "AAB", "AAC", "ABA", "ABB", "ABC")
+
+expected_prob <- tibble(
+  `食材パターン` = patterns,
+  q = c(1/9, 1/9, 1/9, 2/9, 2/9, 2/9)
+)
+
+# 日ごと・食材パターンごとの件数
+daily_pattern <- df %>%
+  arrange(`日付`) %>%
+  count(`日付`, `食材パターン`, name = "n") %>%
+  complete(
+    `日付` = seq(min(`日付`), max(`日付`), by = "day"),
+    `食材パターン` = patterns,
+    fill = list(n = 0)
+  )
+
+# 日ごとの全観測数と累積観測数
+daily_total <- daily_pattern %>%
+  group_by(`日付`) %>%
+  summarise(
+    daily_n = sum(n),
+    .groups = "drop"
+  ) %>%
+  arrange(`日付`) %>%
+  mutate(
+    cum_total = cumsum(daily_n)
+  )
+
+# 各食材パターンについて
+# ・累積実測数
+# ・累積比率
+# ・累積期待値からの偏差
+cum_deviation <- daily_pattern %>%
+  group_by(`食材パターン`) %>%
+  arrange(`日付`, .by_group = TRUE) %>%
+  mutate(
+    cum_n = cumsum(n)
+  ) %>%
+  ungroup() %>%
+  left_join(daily_total, by = "日付") %>%
+  left_join(expected_prob, by = "食材パターン") %>%
+  mutate(
+    cum_ratio = if_else(
+      cum_total > 0,
+      cum_n / cum_total,
+      NA_real_
+    ),
+    expected_n = cum_total * q,
+    deviation = cum_n - expected_n
+  )
+```
+
+```{r}
+#| fig-width: 14
+#| fig-height: 12
+
+# 上段：累積比率
+p_ratio <- ggplot(
+  cum_deviation,
+  aes(
+    x = `日付`,
+    y = cum_ratio,
+    color = `食材パターン`
+  )
+) +
+  geom_line(linewidth = 0.8) +
+  geom_hline(
+    yintercept = c(1/9, 2/9),
+    linetype = "dashed"
+  ) +
+  scale_y_continuous(
+    labels = percent
+  ) +
+  theme_minimal() +
+  labs(
+    title = "食材パターンの累積出現比率",
+    subtitle = "破線：期待比率 1/9, 2/9",
+    x = NULL,
+    y = "累積出現比率",
+    color = "食材パターン"
+  )
+
+
+# 下段：累積期待値からの偏差
+p_deviation <- ggplot(
+  cum_deviation,
+  aes(
+    x = `日付`,
+    y = deviation,
+    color = `食材パターン`
+  )
+) +
+  geom_line(linewidth = 0.8) +
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed"
+  ) +
+  theme_minimal() +
+  labs(
+    title = "食材パターンの累積期待値からの偏差",
+    subtitle = "期待比率 AAA:AAB:AAC:ABA:ABB:ABC = 1:1:1:2:2:2",
+    x = "日付",
+    y = "実測累積数 - 期待累積数",
+    color = "食材パターン"
+  )
+
+
+# 縦に並べる
+p_ratio / p_deviation +
+  plot_layout(
+    heights = c(1, 1),
+    guides = "collect"
+  ) &
+  theme(
+    legend.position = "bottom"
+  )
+```
+
+# パターン連続
+
+## 連検定
+
+```{r}
+library(tseries)
+
+# 2枠目のデータをベクトル化 (A/B)
+x <- factor(df2$`2枠目`)
+# 連検定の実行
+runs.test(x)
+```
+
+## 可視化
+
+```{r}
+# CUSUMチャートを描くコード例
+df_cusum <- df %>%
+  mutate(
+    # Aなら期待値との差分をプラスに、Bならマイナスにする
+    # 期待値が1/3なので、Aなら +2/3、Bなら -1/3
+    val = ifelse(`2枠目` == "A", 2/3, -1/3),
+    cusum = cumsum(val),
+    idx = row_number()
+  )
+
+ggplot(df_cusum, aes(x = idx, y = cusum)) +
+  geom_line(color = "darkgreen", size = 1) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    title = "2枠目A出現率の累積偏差 (CUSUM)",
+    subtitle = "右肩上がりならAが確変中、右肩下がりならBが多め",
+    x = "試行順（古い順）", y = "累積偏差"
+  ) +
+  theme_minimal(base_family = "noto")
+```
+
