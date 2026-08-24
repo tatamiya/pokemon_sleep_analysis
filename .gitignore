@@ -5,3 +5,5 @@
 
 .quarto/
 rendered/
+/.quarto/
+**/*.quarto_ipynb
