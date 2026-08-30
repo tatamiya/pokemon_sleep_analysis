@@ -119,8 +119,6 @@ https://wikiwiki.jp/poke_sleep/%E9%A3%9F%E6%9D%90
 
 より詳細には、2枠目のA or B は 1/3, 2/3 で、3枠目 A or B or C がそれぞれ1/3ずつの確率で割り当てられ、かつ2枠目と3枠目は独立である、とされています。
 
-（簡単な図を入れたい）
-
 ![alt text](/article/figures/01_probability/ingredient_patterns_commonly_believed.png)
 
 この説の根拠について調べてみたところ、ポケモンスリープ攻略・検証Wikiにおいて、サービス開始から間もない2023年11～12月にGoogleフォームでユーザーから個体データを募り、食材枠の抽選確率を検証していました。
