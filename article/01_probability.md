@@ -387,7 +387,7 @@ B側：ABA + ABB + ABC
 - ABB：25.9%（21.5%～30.6%）
 - ABC：25.3%（21.0%～30.0%）
 
-<!-- TODO: 全6パターンの出現確率の事後分布を出力する -->
+![全6パターンの出現確率の事後分布](/article/figures/01_probability/ingredient_pattern_posterior_distributions.png)
 
 推定値を見ると、AAA・AAB・AACはいずれも通説の11.1%より低め、一方でABB・ABCは22.2%より高めとなりました。
 これは、先ほど2枠目だけを見たときにAが少なかったこととも対応しています。

@@ -1805,15 +1805,86 @@ dist_data <- lapply(
     )
   }
 ) %>%
-  bind_rows()
-
-# 通説上の理論値
-theory_lines <- data.frame(
-  val = c(
-    1/9,
-    2/9
+  bind_rows() %>%
+  mutate(
+    食材パターン = factor(
+      食材パターン,
+      levels = patterns_all
+    ),
+    `2枠目グループ` = factor(
+      if_else(
+        str_sub(
+          as.character(食材パターン),
+          2,
+          2
+        ) == "A",
+        "2枠目 A",
+        "2枠目 B"
+      ),
+      levels = pattern_group_levels
+    )
   )
-)
+
+posterior_plot_summary <-
+  posterior_summary_all %>%
+  mutate(
+    食材パターン = factor(
+      食材パターン,
+      levels = patterns_all
+    ),
+    `2枠目グループ` = factor(
+      if_else(
+        str_sub(
+          as.character(食材パターン),
+          2,
+          2
+        ) == "A",
+        "2枠目 A",
+        "2枠目 B"
+      ),
+      levels = pattern_group_levels
+    ),
+    推定値ラベル = scales::percent(
+      事後平均,
+      accuracy = 0.1
+    )
+  ) %>%
+  left_join(
+    dist_data %>%
+      group_by(食材パターン) %>%
+      summarise(
+        ピーク密度 = max(density),
+        .groups = "drop"
+      ),
+    by = "食材パターン"
+  ) %>%
+  mutate(
+    推定値ラベルy = ピーク密度 * 0.62,
+    推定値ラベル寄せ = if_else(
+      事後平均 < 理論値,
+      1.15,
+      -0.15
+    )
+  )
+
+theory_plot_labels <-
+  posterior_plot_summary %>%
+  filter(
+    食材パターン %in% c(
+      "AAA",
+      "ABA"
+    )
+  ) %>%
+  mutate(
+    通説値ラベル = paste0(
+      "通説 ",
+      scales::percent(
+        理論値,
+        accuracy = 0.1
+      )
+    ),
+    通説値ラベルy = ピーク密度 * 0.28
+  )
 
 # 5. 可視化
 showtext_auto()
@@ -1823,63 +1894,167 @@ ggplot(
   aes(
     x = x,
     y = density,
-    color = 食材パターン,
-    fill = 食材パターン
+    color = `2枠目グループ`,
+    fill = `2枠目グループ`
   )
 ) +
   geom_area(
-    alpha = 0.1,
+    alpha = 0.24,
     position = "identity"
   ) +
   geom_line(
+    linewidth = 1.1
+  ) +
+  geom_vline(
+    data = posterior_plot_summary,
+    aes(
+      xintercept = 事後平均,
+      color = `2枠目グループ`
+    ),
+    linetype = "dashed",
     linewidth = 1
   ) +
   geom_vline(
-    data = data.frame(
-      食材パターン = patterns_all,
-      mean_val = post_alpha / sum_post_alpha
-    ),
+    data = posterior_plot_summary,
     aes(
-      xintercept = mean_val,
-      color = 食材パターン
-    ),
-    linetype = "dashed",
-    alpha = 0.5
-  ) +
-  geom_vline(
-    data = theory_lines,
-    aes(
-      xintercept = val
+      xintercept = 理論値
     ),
     linetype = "dotted",
-    color = "black",
-    linewidth = 0.8,
-    alpha = 0.6
+    color = "grey15",
+    linewidth = 1
+  ) +
+  geom_label(
+    data = posterior_plot_summary,
+    aes(
+      x = 事後平均,
+      y = 推定値ラベルy,
+      label = 推定値ラベル,
+      hjust = 推定値ラベル寄せ
+    ),
+    inherit.aes = FALSE,
+    vjust = 0.5,
+    color = "grey15",
+    fill = "white",
+    family = "noto",
+    fontface = "bold",
+    label.padding = grid::unit(
+      0.12,
+      "lines"
+    ),
+    label.size = 0,
+    size = 3.8
+  ) +
+  geom_label(
+    data = theory_plot_labels,
+    aes(
+      x = 理論値,
+      y = 通説値ラベルy,
+      label = 通説値ラベル
+    ),
+    inherit.aes = FALSE,
+    hjust = -0.1,
+    vjust = 0.5,
+    color = "grey15",
+    fill = "white",
+    family = "noto",
+    fontface = "bold",
+    label.padding = grid::unit(
+      0.12,
+      "lines"
+    ),
+    label.size = 0,
+    size = 3.8
+  ) +
+  facet_wrap(
+    vars(食材パターン),
+    nrow = 2
+  ) +
+  scale_color_manual(
+    values = c(
+      "2枠目 A" = "#4C78A8",
+      "2枠目 B" = "#F28E2B"
+    ),
+    guide = "none"
+  ) +
+  scale_fill_manual(
+    values = c(
+      "2枠目 A" = "#4C78A8",
+      "2枠目 B" = "#F28E2B"
+    ),
+    guide = "none"
   ) +
   scale_x_continuous(
-    labels = scales::percent,
+    labels = scales::label_percent(
+      accuracy = 1
+    ),
     breaks = seq(
-      0,
-      0.5,
-      0.1
+      0.05,
+      0.30,
+      0.05
+    ),
+    expand = expansion(
+      mult = c(0, 0)
     )
   ) +
+  scale_y_continuous(
+    expand = expansion(
+      mult = c(0, 0.08)
+    )
+  ) +
+  coord_cartesian(
+    xlim = c(0.04, 0.34),
+    expand = FALSE
+  ) +
   labs(
-    title = "食材パターン出現確率の事後分布（ベイズ推定）",
+    title = "6パターンの出現確率の事後分布",
     subtitle = paste0(
-      "事前分布: Dirichlet(1,1,1,1,1,1), サンプルサイズ N = ",
-      sum(observed_vector)
+      "3枠種",
+      sum(observed_vector),
+      "個体"
     ),
     x = "出現確率",
-    y = "確率密度",
-    caption = "破線：事後平均、点線：通説上の理論値"
+    y = NULL,
+    caption = "破線：推定値　　点線：通説値"
   ) +
   theme_minimal(
+    base_size = 18,
     base_family = "noto"
   ) +
   theme(
-    legend.position = "right",
-    panel.grid.minor = element_blank()
+    plot.title = element_text(
+      size = 26,
+      face = "bold"
+    ),
+    plot.subtitle = element_text(
+      size = 17,
+      margin = margin(
+        b = 12
+      )
+    ),
+    plot.caption = element_text(
+      size = 16,
+      face = "bold",
+      color = "grey15"
+    ),
+    axis.title.x = element_text(
+      size = 18
+    ),
+    axis.text.x = element_text(
+      size = 14
+    ),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.spacing = grid::unit(
+      1.2,
+      "lines"
+    ),
+    strip.background = element_blank(),
+    strip.text = element_text(
+      size = 18,
+      face = "bold"
+    )
   )
 ```
 
