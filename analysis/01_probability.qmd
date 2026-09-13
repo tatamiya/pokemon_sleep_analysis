@@ -61,7 +61,7 @@ df <- df_org %>%
   filter(is.na(`収集開始前分`)) %>%
   filter(is.na(`2枠種フラグ`))
 
-# 2枠種含む
+# 2食材種含む
 df2 <- df_org %>%
   filter(is.na(`収集開始前分`))
 ```
@@ -102,7 +102,7 @@ q_slot3 <- c(
 
 ## 2枠目
 
-（2枠種も含める）
+（2食材種も含める）
 
 ```{r}
 summary_slot2 <- df2 %>%
@@ -227,7 +227,7 @@ ggplot(
   labs(
     title = "2枠目の出現割合",
     subtitle = paste0(
-      "2枠種を含む",
+      "2食材種を含む",
       sum(summary_slot2$出現数),
       "個体"
     ),
@@ -388,7 +388,7 @@ ggplot(
   labs(
     title = "3枠目の出現割合",
     subtitle = paste0(
-      "3枠種",
+      "3食材種",
       sum(summary_slot3$出現数),
       "個体"
     ),
@@ -593,7 +593,7 @@ ggplot(
   labs(
     title = "食材パターンごとの出現割合",
     subtitle = paste0(
-      "3枠種",
+      "3食材種",
       sum(summary_pattern$出現数),
       "個体"
     ),
@@ -771,7 +771,7 @@ ggplot(
   labs(
     title = "2枠目条件付きの3枠目出現割合",
     subtitle = paste0(
-      "3枠種",
+      "3食材種",
       sum(summary_conditional_slot3$出現数),
       "個体　｜　破線：通説 ",
       scales::percent(
@@ -1303,7 +1303,7 @@ tibble(
 
 ```{r}
 # 1. データの読み込みとカウント
-# 2枠種も含めた集計対象データ df2 を使用
+# 2食材種も含めた集計対象データ df2 を使用
 second_patterns <- c("A", "B")
 
 observed_counts_second <- df2 %>%
@@ -1502,7 +1502,7 @@ ggplot(
 
 ```{r}
 # 1. データの読み込みとカウント
-# 2枠種を除外した集計対象データ df を使用
+# 2食材種を除外した集計対象データ df を使用
 third_patterns <- c(
   "A",
   "B",
@@ -1690,7 +1690,7 @@ ggplot(
 
 ```{r}
 # 1. データの読み込みとカウント
-# 2枠種を除外した集計対象データ df を使用
+# 2食材種を除外した集計対象データ df を使用
 patterns_all <- c(
   "AAA",
   "AAB",
@@ -2008,7 +2008,7 @@ ggplot(
   labs(
     title = "6パターンの出現確率の事後分布",
     subtitle = paste0(
-      "3枠種",
+      "3食材種",
       sum(observed_vector),
       "個体"
     ),
@@ -2076,7 +2076,7 @@ $$
 となる。
 
 直接推定との比較でサンプルをそろえるため、
-ここでは2枠種を除いた `df` を使用する。
+ここでは2食材種を除いた `df` を使用する。
 
 ```{r}
 # 既に作成した2枠目×3枠目の分割表から、2枠目の出現数を集計
@@ -2562,7 +2562,7 @@ assumed_pattern_plot <- make_assumed_posterior_plot(
   plot_annotation(
     title = "3枠目均等・独立を仮定した場合の事後分布",
     subtitle = paste0(
-      "3枠種",
+      "3食材種",
       sum(slot2_counts_assumed),
       "個体　｜　2枠目の確率を3等分して各パターンへ換算"
     ),
@@ -3094,7 +3094,7 @@ monthly_slot2_ratio_plot <- ggplot(
   plot_annotation(
     title = "2枠目A/Bの月次推移",
     subtitle = paste0(
-      "2枠種を含む",
+      "2食材種を含む",
       sum(monthly_slot2$出現数),
       "個体　｜　",
       year(last_month_summary$月),
@@ -3226,7 +3226,7 @@ df_for_rolling <- df %>%
 
 plot_start <- min(df_for_rolling$`日付`) + lubridate::days(29)
 
-# 2枠種含む
+# 2食材種含む
 df_for_rolling2 <- df2 %>%
   arrange(`日付`) %>%
   mutate(
