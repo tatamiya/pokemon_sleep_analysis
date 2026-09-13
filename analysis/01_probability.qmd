@@ -2211,6 +2211,385 @@ posterior_summary_patterns_assumed %>%
   knitr::kable()
 ```
 
+```{r}
+assumed_p_grid <- seq(
+  0,
+  1,
+  length.out = 1000
+)
+
+assumed_pattern_grid <- seq(
+  0,
+  1/3,
+  length.out = 1000
+)
+
+assumed_alpha_A <- unname(
+  posterior_alpha_slot2_assumed["A"]
+)
+
+assumed_alpha_B <- unname(
+  posterior_alpha_slot2_assumed["B"]
+)
+
+assumed_slot2_dist <- bind_rows(
+  tibble(
+    カテゴリ = "A",
+    x = assumed_p_grid,
+    密度 = dbeta(
+      assumed_p_grid,
+      assumed_alpha_A,
+      assumed_alpha_B
+    ),
+    グループ = "A側"
+  ),
+  tibble(
+    カテゴリ = "B",
+    x = assumed_p_grid,
+    密度 = dbeta(
+      assumed_p_grid,
+      assumed_alpha_B,
+      assumed_alpha_A
+    ),
+    グループ = "B側"
+  )
+) %>%
+  mutate(
+    カテゴリ = factor(
+      カテゴリ,
+      levels = c("A", "B")
+    ),
+    グループ = factor(
+      グループ,
+      levels = c("A側", "B側")
+    )
+  )
+
+assumed_pattern_dist <- bind_rows(
+  tibble(
+    カテゴリ = "AA*（AAA・AAB・AAC）",
+    x = assumed_pattern_grid,
+    密度 = 3 * dbeta(
+      3 * assumed_pattern_grid,
+      assumed_alpha_A,
+      assumed_alpha_B
+    ),
+    グループ = "A側"
+  ),
+  tibble(
+    カテゴリ = "AB*（ABA・ABB・ABC）",
+    x = assumed_pattern_grid,
+    密度 = 3 * dbeta(
+      3 * assumed_pattern_grid,
+      assumed_alpha_B,
+      assumed_alpha_A
+    ),
+    グループ = "B側"
+  )
+) %>%
+  mutate(
+    カテゴリ = factor(
+      カテゴリ,
+      levels = c(
+        "AA*（AAA・AAB・AAC）",
+        "AB*（ABA・ABB・ABC）"
+      )
+    ),
+    グループ = factor(
+      グループ,
+      levels = c("A側", "B側")
+    )
+  )
+
+add_assumed_plot_labels <- function(
+  summary_data,
+  dist_data
+) {
+  summary_data %>%
+    left_join(
+      dist_data %>%
+        group_by(カテゴリ) %>%
+        summarise(
+          ピーク密度 = max(密度),
+          .groups = "drop"
+        ),
+      by = "カテゴリ"
+    ) %>%
+    mutate(
+      推定値ラベル = paste0(
+        推定値名,
+        scales::percent(
+          推定値,
+          accuracy = 0.1
+        )
+      ),
+      通説値ラベル = paste0(
+        "通説 ",
+        scales::percent(
+          通説値,
+          accuracy = 0.1
+        )
+      ),
+      推定値ラベルy = ピーク密度 * 0.62,
+      通説値ラベルy = ピーク密度 * 0.28,
+      通説値ラベル寄せ = if_else(
+        推定値 < 通説値,
+        -0.1,
+        1.1
+      )
+    )
+}
+
+assumed_slot2_plot_summary <- tibble(
+  カテゴリ = factor(
+    c("A", "B"),
+    levels = c("A", "B")
+  ),
+  推定値 = c(
+    p_slot2_A_mean_assumed,
+    1 - p_slot2_A_mean_assumed
+  ),
+  通説値 = c(1/3, 2/3),
+  推定値名 = c("A ", "B "),
+  推定値ラベル寄せ = c(1.15, -0.15),
+  グループ = factor(
+    c("A側", "B側"),
+    levels = c("A側", "B側")
+  )
+) %>%
+  add_assumed_plot_labels(
+    assumed_slot2_dist
+  )
+
+assumed_pattern_plot_summary <- tibble(
+  カテゴリ = factor(
+    c(
+      "AA*（AAA・AAB・AAC）",
+      "AB*（ABA・ABB・ABC）"
+    ),
+    levels = c(
+      "AA*（AAA・AAB・AAC）",
+      "AB*（ABA・ABB・ABC）"
+    )
+  ),
+  推定値 = c(
+    p_slot2_A_mean_assumed / 3,
+    (1 - p_slot2_A_mean_assumed) / 3
+  ),
+  通説値 = c(1/9, 2/9),
+  推定値名 = c("A側　各 ", "B側　各 "),
+  推定値ラベル寄せ = c(-0.15, 1.15),
+  グループ = factor(
+    c("A側", "B側"),
+    levels = c("A側", "B側")
+  )
+) %>%
+  add_assumed_plot_labels(
+    assumed_pattern_dist
+  )
+
+assumed_plot_colors <- c(
+  "A側" = "#4C78A8",
+  "B側" = "#F28E2B"
+)
+
+make_assumed_posterior_plot <- function(
+  dist_data,
+  summary_data,
+  plot_title,
+  plot_subtitle,
+  x_limits,
+  x_breaks
+) {
+  ggplot(
+    dist_data,
+    aes(
+      x = x,
+      y = 密度,
+      color = グループ,
+      fill = グループ
+    )
+  ) +
+    geom_area(
+      alpha = 0.24,
+      position = "identity"
+    ) +
+    geom_line(
+      linewidth = 1.1
+    ) +
+    geom_vline(
+      data = summary_data,
+      aes(
+        xintercept = 推定値,
+        color = グループ
+      ),
+      linetype = "dashed",
+      linewidth = 1
+    ) +
+    geom_vline(
+      data = summary_data,
+      aes(
+        xintercept = 通説値
+      ),
+      color = "grey15",
+      linetype = "dotted",
+      linewidth = 1
+    ) +
+    geom_label(
+      data = summary_data,
+      aes(
+        x = 推定値,
+        y = 推定値ラベルy,
+        label = 推定値ラベル,
+        hjust = 推定値ラベル寄せ
+      ),
+      inherit.aes = FALSE,
+      vjust = 0.5,
+      color = "grey15",
+      fill = "white",
+      family = "noto",
+      fontface = "bold",
+      label.padding = grid::unit(
+        0.12,
+        "lines"
+      ),
+      label.size = 0,
+      size = 3.8
+    ) +
+    geom_label(
+      data = summary_data,
+      aes(
+        x = 通説値,
+        y = 通説値ラベルy,
+        label = 通説値ラベル,
+        hjust = 通説値ラベル寄せ
+      ),
+      inherit.aes = FALSE,
+      vjust = 0.5,
+      color = "grey15",
+      fill = "white",
+      family = "noto",
+      fontface = "bold",
+      label.padding = grid::unit(
+        0.12,
+        "lines"
+      ),
+      label.size = 0,
+      size = 3.8
+    ) +
+    scale_color_manual(
+      values = assumed_plot_colors,
+      guide = "none"
+    ) +
+    scale_fill_manual(
+      values = assumed_plot_colors,
+      guide = "none"
+    ) +
+    scale_x_continuous(
+      labels = scales::label_percent(
+        accuracy = 1
+      ),
+      breaks = x_breaks,
+      expand = expansion(
+        mult = c(0, 0)
+      )
+    ) +
+    scale_y_continuous(
+      expand = expansion(
+        mult = c(0, 0.08)
+      )
+    ) +
+    coord_cartesian(
+      xlim = x_limits,
+      expand = FALSE
+    ) +
+    labs(
+      title = plot_title,
+      subtitle = plot_subtitle,
+      x = "出現確率",
+      y = NULL
+    ) +
+    theme_minimal(
+      base_size = 18,
+      base_family = "noto"
+    ) +
+    theme(
+      plot.title = element_text(
+        size = 20,
+        face = "bold"
+      ),
+      plot.subtitle = element_text(
+        size = 13,
+        margin = margin(
+          b = 8
+        )
+      ),
+      axis.title.x = element_text(
+        size = 16
+      ),
+      axis.text.x = element_text(
+        size = 13
+      ),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor = element_blank()
+    )
+}
+
+assumed_slot2_plot <- make_assumed_posterior_plot(
+  assumed_slot2_dist,
+  assumed_slot2_plot_summary,
+  "2枠目",
+  "AとBの出現確率",
+  c(0.15, 0.85),
+  seq(0.2, 0.8, by = 0.2)
+)
+
+assumed_pattern_plot <- make_assumed_posterior_plot(
+  assumed_pattern_dist,
+  assumed_pattern_plot_summary,
+  "6パターンへの換算",
+  "A側：AAA・AAB・AAC　　B側：ABA・ABB・ABC",
+  c(0.05, 0.30),
+  seq(0.05, 0.30, by = 0.05)
+)
+
+(
+  assumed_slot2_plot |
+    assumed_pattern_plot
+  ) +
+  plot_annotation(
+    title = "3枠目均等・独立を仮定した場合の事後分布",
+    subtitle = paste0(
+      "3枠種",
+      sum(slot2_counts_assumed),
+      "個体　｜　2枠目の確率を3等分して各パターンへ換算"
+    ),
+    caption = "破線：推定値　　点線：通説値",
+    theme = theme(
+      plot.title = element_text(
+        family = "noto",
+        size = 26,
+        face = "bold"
+      ),
+      plot.subtitle = element_text(
+        family = "noto",
+        size = 17,
+        margin = margin(
+          b = 10
+        )
+      ),
+      plot.caption = element_text(
+        family = "noto",
+        size = 16,
+        face = "bold",
+        color = "grey15"
+      )
+    )
+  )
+```
+
 ### 事前分布の感度確認
 
 6パターンの直接推定で用いた
