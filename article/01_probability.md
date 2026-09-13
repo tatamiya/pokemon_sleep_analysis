@@ -203,7 +203,7 @@ https://wikiwiki.jp/poke_sleep/%E6%A4%9C%E8%A8%BC/%E3%82%B5%E3%83%96%E3%82%B9%E3
 
 通説では、上の3パターンがそれぞれ1/9（約11.1%）、下の3パターンがそれぞれ2/9（約22.2%）です。
 
-<!-- TODO: ここに6パターンの実測割合と通説上の確率を比較する図。analysis/01_probability.qmd「パターンごとの出現頻度と出現割合 > 全体」の既存図「食材パターンごとの出現割合」を使用候補とする。 -->
+![食材パターンごとの実測割合と通説上の確率](/article/figures/01_probability/ingredient_patterns_observed_vs_commonly_believed.png)
 
 気になっていたAAAは8.8%でした。確かに、手元の記録では通説の11.1%より少なめです。
 AAAだけでなくAAB・AACも通説より少なく、反対にABB・ABCは多めでした。

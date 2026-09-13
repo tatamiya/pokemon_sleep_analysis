@@ -296,32 +296,173 @@ summary_pattern %>%
   knitr::kable()
 ```
 ```{r}
+#| label: plot-pattern-overall
+
+pattern_group_levels <- c(
+  "2枠目 A",
+  "2枠目 B"
+)
+
+summary_pattern_plot <- summary_pattern %>%
+  mutate(
+    `2枠目グループ` = factor(
+      if_else(
+        str_sub(
+          as.character(`食材パターン`),
+          2,
+          2
+        ) == "A",
+        "2枠目 A",
+        "2枠目 B"
+      ),
+      levels = pattern_group_levels
+    )
+  )
+
+pattern_expected_lines <- tibble(
+  `2枠目グループ` = factor(
+    pattern_group_levels,
+    levels = pattern_group_levels
+  ),
+  期待割合 = c(1/9, 2/9),
+  ラベル位置 = factor(
+    c("AAB", "ABA"),
+    levels = patterns
+  )
+) %>%
+  mutate(
+    ラベル = paste0(
+      "通説 ",
+      scales::percent(
+        期待割合,
+        accuracy = 0.1
+      )
+    )
+  )
+
 ggplot(
-  summary_pattern,
+  summary_pattern_plot,
   aes(
     x = `食材パターン`,
-    y = 出現割合
+    y = 出現割合,
+    fill = `2枠目グループ`
   )
 ) +
   geom_col(
-    width = 0.7
+    width = 0.72
   ) +
-  geom_point(
+  geom_hline(
+    data = pattern_expected_lines,
     aes(
-      y = 期待割合
+      yintercept = 期待割合
     ),
-    size = 3,
-    shape = 4
+    color = "grey25",
+    linetype = "dashed",
+    linewidth = 1
+  ) +
+  geom_text(
+    aes(
+      label = scales::percent(
+        出現割合,
+        accuracy = 0.1
+      )
+    ),
+    color = "grey15",
+    family = "noto",
+    fontface = "bold",
+    nudge_y = 0.006,
+    size = 5.2
+  ) +
+  geom_label(
+    data = pattern_expected_lines,
+    aes(
+      x = ラベル位置,
+      y = 期待割合 + 0.009,
+      label = ラベル
+    ),
+    inherit.aes = FALSE,
+    color = "grey15",
+    fill = "white",
+    family = "noto",
+    fontface = "bold",
+    label.padding = grid::unit(
+      0.12,
+      "lines"
+    ),
+    label.size = 0,
+    size = 4.8
+  ) +
+  facet_grid(
+    cols = vars(`2枠目グループ`),
+    scales = "free_x",
+    space = "free_x"
+  ) +
+  scale_fill_manual(
+    values = c(
+      "2枠目 A" = "#4C78A8",
+      "2枠目 B" = "#F28E2B"
+    ),
+    guide = "none"
   ) +
   scale_y_continuous(
-    labels = scales::percent
+    labels = scales::label_percent(
+      accuracy = 1
+    ),
+    breaks = seq(
+      0,
+      0.30,
+      by = 0.05
+    ),
+    limits = c(0, 0.30),
+    expand = expansion(
+      mult = c(0, 0)
+    )
   ) +
-  theme_minimal() +
   labs(
     title = "食材パターンごとの出現割合",
-    subtitle = "×：通説上の 1:1:1:2:2:2 モデル",
+    subtitle = paste0(
+      "3枠種",
+      sum(summary_pattern$出現数),
+      "個体"
+    ),
     x = "食材パターン",
     y = "出現割合"
+  ) +
+  theme_minimal(
+    base_size = 18,
+    base_family = "noto"
+  ) +
+  theme(
+    plot.title = element_text(
+      size = 26,
+      face = "bold"
+    ),
+    plot.subtitle = element_text(
+      size = 18,
+      margin = margin(
+        b = 12
+      )
+    ),
+    axis.title = element_text(
+      size = 18
+    ),
+    axis.text = element_text(
+      size = 16
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.spacing.x = grid::unit(
+      1.5,
+      "lines"
+    ),
+    strip.background = element_blank(),
+    strip.text = element_text(
+      size = 18,
+      face = "bold",
+      margin = margin(
+        b = 4
+      )
+    )
   )
 ```
 
