@@ -151,28 +151,112 @@ ggplot(
   summary_slot2,
   aes(
     x = `2枠目`,
-    y = 出現割合
+    y = 出現割合,
+    fill = `2枠目`
   )
 ) +
   geom_col(
-    width = 0.7
+    width = 0.62
   ) +
-  geom_point(
+  geom_errorbar(
     aes(
-      y = 期待割合
+      ymin = 期待割合,
+      ymax = 期待割合
     ),
-    size = 3,
-    shape = 4
+    width = 0.78,
+    color = "grey25",
+    linetype = "dashed",
+    linewidth = 1
+  ) +
+  geom_text(
+    aes(
+      label = scales::percent(
+        出現割合,
+        accuracy = 0.1
+      )
+    ),
+    color = "grey15",
+    family = "noto",
+    fontface = "bold",
+    nudge_y = 0.018,
+    size = 5.2
+  ) +
+  geom_label(
+    aes(
+      y = 期待割合,
+      label = paste0(
+        "通説 ",
+        scales::percent(
+          期待割合,
+          accuracy = 0.1
+        )
+      )
+    ),
+    color = "grey15",
+    fill = "white",
+    family = "noto",
+    fontface = "bold",
+    label.padding = grid::unit(
+      0.12,
+      "lines"
+    ),
+    label.size = 0,
+    size = 4.8
+  ) +
+  scale_fill_manual(
+    values = c(
+      A = "#4C78A8",
+      B = "#F28E2B"
+    ),
+    guide = "none"
   ) +
   scale_y_continuous(
-    labels = scales::percent
+    labels = scales::label_percent(
+      accuracy = 1
+    ),
+    breaks = seq(
+      0,
+      0.80,
+      by = 0.10
+    ),
+    limits = c(0, 0.80),
+    expand = expansion(
+      mult = c(0, 0)
+    )
   ) +
-  theme_minimal() +
   labs(
     title = "2枠目の出現割合",
-    subtitle = "×：通説上の確率（A = 1/3, B = 2/3）",
+    subtitle = paste0(
+      "2枠種を含む",
+      sum(summary_slot2$出現数),
+      "個体"
+    ),
     x = "2枠目",
     y = "出現割合"
+  ) +
+  theme_minimal(
+    base_size = 18,
+    base_family = "noto"
+  ) +
+  theme(
+    plot.title = element_text(
+      size = 26,
+      face = "bold"
+    ),
+    plot.subtitle = element_text(
+      size = 18,
+      margin = margin(
+        b = 12
+      )
+    ),
+    axis.title = element_text(
+      size = 18
+    ),
+    axis.text = element_text(
+      size = 16
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank()
   )
 ```
 
