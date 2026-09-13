@@ -1470,6 +1470,220 @@ ggplot(
   )
 ```
 
+## 3枠目一様・枠間独立を仮定した全パターン
+
+3枠目の A、B、C がそれぞれ $1/3$ で出現し、
+2枠目と3枠目が独立であると仮定する。
+
+2枠目Aの出現確率を $p$ とすると、
+
+$$
+P(AAA)=P(AAB)=P(AAC)=\frac{p}{3},
+$$
+
+$$
+P(ABA)=P(ABB)=P(ABC)=\frac{1-p}{3}
+$$
+
+となる。
+
+直接推定との比較でサンプルをそろえるため、
+ここでは2枠種を除いた `df` を使用する。
+
+```{r}
+# 既に作成した2枠目×3枠目の分割表から、2枠目の出現数を集計
+slot2_counts_assumed <- rowSums(
+  tab_slot2_slot3
+)
+
+# p = P(2枠目 = A) の事前分布を Beta(1, 1) とする
+# 直接推定の Dirichlet(1, ..., 1) から p に誘導される事前分布は
+# Beta(3, 3) であり、区間幅を厳密に比較する場合は事前分布も
+# そろえる必要がある。後段で感度を確認する。
+prior_alpha_slot2_assumed <- c(
+  A = 1,
+  B = 1
+)
+
+posterior_alpha_slot2_assumed <-
+  prior_alpha_slot2_assumed +
+  slot2_counts_assumed
+
+posterior_total_slot2_assumed <- sum(
+  posterior_alpha_slot2_assumed
+)
+
+p_slot2_A_mean_assumed <- unname(
+  posterior_alpha_slot2_assumed["A"] /
+    posterior_total_slot2_assumed
+)
+
+p_slot2_A_ci_assumed <- qbeta(
+  c(
+    0.025,
+    0.975
+  ),
+  shape1 = posterior_alpha_slot2_assumed["A"],
+  shape2 = posterior_alpha_slot2_assumed["B"]
+)
+
+posterior_summary_slot2_assumed <- tibble(
+  A出現数 = unname(
+    slot2_counts_assumed["A"]
+  ),
+  サンプルサイズ = sum(
+    slot2_counts_assumed
+  ),
+  A実測割合 = unname(
+    slot2_counts_assumed["A"] /
+      sum(slot2_counts_assumed)
+  ),
+  A事後平均 = p_slot2_A_mean_assumed,
+  信用区間下限 = p_slot2_A_ci_assumed[1],
+  信用区間上限 = p_slot2_A_ci_assumed[2],
+  `P(p < 1/3 | data)` = pbeta(
+    1/3,
+    shape1 = posterior_alpha_slot2_assumed["A"],
+    shape2 = posterior_alpha_slot2_assumed["B"]
+  )
+)
+
+posterior_summary_slot2_assumed %>%
+  mutate(
+    across(
+      c(
+        A実測割合,
+        A事後平均,
+        信用区間下限,
+        信用区間上限,
+        `P(p < 1/3 | data)`
+      ),
+      ~ scales::percent(
+        .x,
+        accuracy = 0.1
+      )
+    )
+  ) %>%
+  knitr::kable()
+```
+
+```{r}
+posterior_summary_patterns_assumed <- tibble(
+  食材パターン = patterns_all,
+  事後平均 = c(
+    rep(
+      p_slot2_A_mean_assumed / 3,
+      3
+    ),
+    rep(
+      (1 - p_slot2_A_mean_assumed) / 3,
+      3
+    )
+  ),
+  信用区間下限 = c(
+    rep(
+      p_slot2_A_ci_assumed[1] / 3,
+      3
+    ),
+    rep(
+      (1 - p_slot2_A_ci_assumed[2]) / 3,
+      3
+    )
+  ),
+  信用区間上限 = c(
+    rep(
+      p_slot2_A_ci_assumed[2] / 3,
+      3
+    ),
+    rep(
+      (1 - p_slot2_A_ci_assumed[1]) / 3,
+      3
+    )
+  ),
+  通説上の値 = unname(
+    q_pattern[patterns_all]
+  )
+)
+
+posterior_summary_patterns_assumed %>%
+  mutate(
+    across(
+      c(
+        事後平均,
+        信用区間下限,
+        信用区間上限,
+        通説上の値
+      ),
+      ~ scales::percent(
+        .x,
+        accuracy = 0.1
+      )
+    )
+  ) %>%
+  knitr::kable()
+```
+
+### 事前分布の感度確認
+
+6パターンの直接推定で用いた
+$\mathrm{Dirichlet}(1,1,1,1,1,1)$ から、
+2枠目A側の合計確率 $p$ に誘導される事前分布は
+$\mathrm{Beta}(3,3)$ となる。
+
+したがって、上の $\mathrm{Beta}(1,1)$ による推定と
+6パターンの直接推定は、事前分布まで厳密にそろえた比較ではない。
+$\mathrm{Beta}(3,3)$ を用いた場合も確認する。
+
+```{r}
+posterior_alpha_slot2_aligned <-
+  c(
+    A = 3,
+    B = 3
+  ) +
+  slot2_counts_assumed
+
+p_slot2_A_mean_aligned <- unname(
+  posterior_alpha_slot2_aligned["A"] /
+    sum(posterior_alpha_slot2_aligned)
+)
+
+p_slot2_A_ci_aligned <- qbeta(
+  c(
+    0.025,
+    0.975
+  ),
+  shape1 = posterior_alpha_slot2_aligned["A"],
+  shape2 = posterior_alpha_slot2_aligned["B"]
+)
+
+tibble(
+  A事後平均 = p_slot2_A_mean_aligned,
+  A信用区間下限 = p_slot2_A_ci_aligned[1],
+  A信用区間上限 = p_slot2_A_ci_aligned[2],
+  `P(p < 1/3 | data)` = pbeta(
+    1/3,
+    shape1 = posterior_alpha_slot2_aligned["A"],
+    shape2 = posterior_alpha_slot2_aligned["B"]
+  ),
+  AAA事後平均 = p_slot2_A_mean_aligned / 3,
+  AAA信用区間下限 = p_slot2_A_ci_aligned[1] / 3,
+  AAA信用区間上限 = p_slot2_A_ci_aligned[2] / 3
+) %>%
+  mutate(
+    across(
+      everything(),
+      ~ scales::percent(
+        .x,
+        accuracy = 0.1
+      )
+    )
+  ) %>%
+  knitr::kable()
+```
+
+サンプルサイズが353あるため、
+事前分布をそろえても実質的な解釈は変わらない。
+
 
 # 週単位のパターン別出現率
 
@@ -2198,4 +2412,3 @@ ggplot(df_cusum, aes(x = idx, y = cusum)) +
   ) +
   theme_minimal(base_family = "noto")
 ```
-
