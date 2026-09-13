@@ -57,13 +57,24 @@ glimpse(df_org)
 ```
 
 ```{r}
+analysis_start_date <- as.Date("2025-11-16")
+analysis_end_date <- as.Date("2026-09-05")
+
 df <- df_org %>%
-  filter(is.na(`収集開始前分`)) %>%
+  filter(
+    is.na(`収集開始前分`),
+    as.Date(日付) >= analysis_start_date,
+    as.Date(日付) <= analysis_end_date
+  ) %>%
   filter(is.na(`2枠種フラグ`))
 
 # 2食材種含む
 df2 <- df_org %>%
-  filter(is.na(`収集開始前分`))
+  filter(
+    is.na(`収集開始前分`),
+    as.Date(日付) >= analysis_start_date,
+    as.Date(日付) <= analysis_end_date
+  )
 ```
 
 
