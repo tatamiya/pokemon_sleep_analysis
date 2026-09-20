@@ -1,6 +1,6 @@
 ---
 title: "2枠目Aの出現確率は時間によらず一定か？"
-subtitle: "第3段階：固定確率・滑らかな時間変化・未知の変化点"
+subtitle: "固定確率・未知の変化点・滑らかな時間変化"
 lang: ja
 format:
   html:
@@ -70,12 +70,15 @@ $$
 $M_0$ と $M_1$ の比較は第1記事との橋渡しであり、
 この分析の中心は、今後 $M_1$ と非定常モデルを比較することにある。
 
-この文書では、まずデータの基本確認と記述的な時系列可視化、
-および $M_0$ と $M_1$ の比較を行う。
-続いて、第2段階として滑らかな時間変化モデル $M_2$ を実装し、
-$M_1$ と比較する。第3段階では未知の変化点モデル $M_3$ を実装し、
-$M_1$ に対して変化点を導入する証拠があるかを評価する。
-$M_2$ と $M_3$ の直接比較は、まだ主目的としない。
+本記事の主分析では、全期間で確率が一定の $M_1$ と、
+期間中に1回だけ確率が変わる未知の変化点モデル $M_3$ を比較する。
+変化点は事前に3月などへ固定せず、候補範囲から推定する。
+ただし、急変ではなく緩やかに変化した可能性もあるため、
+滑らかな時間変化モデル $M_2$ と $M_1$ の比較も補足的に行う。
+$M_2$ と $M_3$ の直接比較は主目的としない。
+
+分析コードは、基本確認、$M_2$、$M_3$、検出力の順に実装しているが、
+記事では $M_1$ と $M_3$ の比較を先に示す。
 
 # データ
 
@@ -99,14 +102,15 @@ df2 <- df_org %>%
 
 ## 2枠目A/Bの分析データ
 
-今回の探索分析では、2026-08-24までの観測を使用する。
-この日付をコード上で固定し、それより後に追加される観測は将来の確認用データとして分ける。
+Part 1と同じく、2025-11-16から2026-09-05までの観測を使用する。
+この期間をコード上で固定し、それより後に追加される観測とは分ける。
 
 ```{r}
 #| label: prepare-slot2-data
 
 slot2_levels <- c("A", "B")
-exploration_cutoff <- as.Date("2026-08-24")
+analysis_start_date <- as.Date("2025-11-16")
+analysis_end_date <- as.Date("2026-09-05")
 
 slot2_source <- df2 %>%
   transmute(
@@ -118,7 +122,8 @@ slot2_data <- slot2_source %>%
   filter(
     !is.na(日付),
     `2枠目` %in% slot2_levels,
-    日付 <= exploration_cutoff
+    日付 >= analysis_start_date,
+    日付 <= analysis_end_date
   ) %>%
   arrange(日付) %>%
   mutate(
@@ -138,7 +143,8 @@ data_filter_summary <- tibble(
     "収集開始前を除外した行数",
     "日付が欠損している行数",
     "2枠目がA/B以外または欠損の行数",
-    "探索分析の締切より後のA/B行数",
+    "分析期間より前のA/B行数",
+    "分析期間より後のA/B行数",
     "最終的な分析対象行数"
   ),
   行数 = c(
@@ -148,7 +154,12 @@ data_filter_summary <- tibble(
     sum(
       !is.na(slot2_source$日付) &
         slot2_source$`2枠目` %in% slot2_levels &
-        slot2_source$日付 > exploration_cutoff
+        slot2_source$日付 < analysis_start_date
+    ),
+    sum(
+      !is.na(slot2_source$日付) &
+        slot2_source$`2枠目` %in% slot2_levels &
+        slot2_source$日付 > analysis_end_date
     ),
     nrow(slot2_data)
   )
@@ -1799,14 +1810,17 @@ candidate_pre_trials_m3 <-
 candidate_post_trials_m3 <-
   change_point_profile_m3$後観測数
 
-calculate_max_m1_m3_statistic <- function(
-  a_count
+calculate_max_m1_m3_statistic_for_candidates <- function(
+  a_count,
+  candidate_positions,
+  candidate_pre_trials,
+  candidate_post_trials
 ) {
   cumulative_a_count <- cumsum(a_count)
   total_a_count <- sum(a_count)
 
   candidate_pre_a_count <- cumulative_a_count[
-    candidate_daily_positions_m3
+    candidate_positions
   ]
 
   candidate_post_a_count <-
@@ -1821,11 +1835,11 @@ calculate_max_m1_m3_statistic <- function(
   log_kernel_m3 <-
     binomial_mle_log_kernel(
       successes = candidate_pre_a_count,
-      trials = candidate_pre_trials_m3
+      trials = candidate_pre_trials
     ) +
     binomial_mle_log_kernel(
       successes = candidate_post_a_count,
-      trials = candidate_post_trials_m3
+      trials = candidate_post_trials
     )
 
   max(
@@ -1833,6 +1847,20 @@ calculate_max_m1_m3_statistic <- function(
       log_kernel_m3 -
         log_kernel_m1
     )
+  )
+}
+
+calculate_max_m1_m3_statistic <- function(
+  a_count
+) {
+  calculate_max_m1_m3_statistic_for_candidates(
+    a_count = a_count,
+    candidate_positions =
+      candidate_daily_positions_m3,
+    candidate_pre_trials =
+      candidate_pre_trials_m3,
+    candidate_post_trials =
+      candidate_post_trials_m3
   )
 }
 
@@ -1959,6 +1987,170 @@ Monte Carlo標準誤差は `r sprintf("%.4f", mcse_bootstrap_m1_m3)` である�
 各ブートストラップ反復で再現して評価している。
 一方、時系列を見て分析テーマそのものを選んだという探索性までは解消しない。
 
+## 候補範囲の感度分析
+
+主分析では、期間端の不安定な分割を避けるため、
+変化点の前後それぞれに全観測の20%以上が残る候補だけを使用した。
+この20%という設定への依存を確認するため、15%と25%でも同じ分析を行う。
+それぞれの設定で候補を作り直し、各ブートストラップ反復でも、
+対応する候補をすべて探索する。
+
+```{r}
+#| label: sensitivity-change-point-range
+
+sensitivity_segment_fractions_m3 <- c(
+  0.15,
+  0.20,
+  0.25
+)
+
+evaluate_change_point_range_m3 <- function(
+  minimum_fraction
+) {
+  minimum_trials <- ceiling(
+    minimum_fraction * total_trials_m3
+  )
+
+  candidate_profile <- daily_slot2 %>%
+    arrange(日付) %>%
+    mutate(
+      日次位置 = row_number(),
+      変化点直前観測日 = 日付,
+      変化点直後観測日 = lead(日付),
+      前観測数 = cumsum(試行数),
+      前A出現数 = cumsum(A出現数),
+      後観測数 = total_trials_m3 - 前観測数,
+      後A出現数 = total_a_m3 - 前A出現数
+    ) %>%
+    filter(
+      !is.na(変化点直後観測日),
+      前観測数 >= minimum_trials,
+      後観測数 >= minimum_trials
+    ) %>%
+    mutate(
+      前A推定確率 = 前A出現数 / 前観測数,
+      後A推定確率 = 後A出現数 / 後観測数,
+      M1からの尤度比改善量 = 2 * (
+        binomial_mle_log_kernel(
+          successes = 前A出現数,
+          trials = 前観測数
+        ) +
+          binomial_mle_log_kernel(
+            successes = 後A出現数,
+            trials = 後観測数
+          ) -
+          binomial_mle_log_kernel(
+            successes = total_a_m3,
+            trials = total_trials_m3
+          )
+      )
+    )
+
+  best_candidate <- candidate_profile %>%
+    slice_max(
+      order_by = M1からの尤度比改善量,
+      n = 1,
+      with_ties = FALSE
+    )
+
+  set.seed(bootstrap_seed_m3)
+
+  bootstrap_statistic <- map_dbl(
+    seq_len(bootstrap_repetitions_m3),
+    function(i) {
+      simulated_a_count <- rbinom(
+        n = nrow(daily_slot2),
+        size = daily_slot2$試行数,
+        prob = p_m1
+      )
+
+      calculate_max_m1_m3_statistic_for_candidates(
+        a_count = simulated_a_count,
+        candidate_positions =
+          candidate_profile$日次位置,
+        candidate_pre_trials =
+          candidate_profile$前観測数,
+        candidate_post_trials =
+          candidate_profile$後観測数
+      )
+    }
+  )
+
+  bootstrap_p_value <- (
+    sum(
+      bootstrap_statistic >=
+        best_candidate$M1からの尤度比改善量
+    ) + 1
+  ) / (
+    bootstrap_repetitions_m3 + 1
+  )
+
+  best_candidate %>%
+    transmute(
+      最小セグメント割合 = minimum_fraction,
+      前後それぞれの最小観測数 = minimum_trials,
+      候補変化点数 = nrow(candidate_profile),
+      最尤変化点区間 = paste0(
+        変化点直前観測日,
+        " ～ ",
+        変化点直後観測日
+      ),
+      前観測数,
+      後観測数,
+      前A出現割合 = 前A推定確率,
+      後A出現割合 = 後A推定確率,
+      最大尤度比改善量 =
+        M1からの尤度比改善量,
+      ブートストラップp値 =
+        bootstrap_p_value
+    )
+}
+
+change_point_range_sensitivity_m3 <-
+  map_dfr(
+    sensitivity_segment_fractions_m3,
+    evaluate_change_point_range_m3
+  )
+
+change_point_range_sensitivity_m3 %>%
+  mutate(
+    最小セグメント割合 = scales::percent(
+      最小セグメント割合,
+      accuracy = 1
+    ),
+    across(
+      c(
+        前A出現割合,
+        後A出現割合
+      ),
+      ~ scales::percent(
+        .x,
+        accuracy = 0.1
+      )
+    )
+  ) %>%
+  knitr::kable(
+    digits = 4
+  )
+
+stopifnot(
+  isTRUE(
+    all.equal(
+      change_point_range_sensitivity_m3 %>%
+        filter(
+          near(
+            最小セグメント割合,
+            minimum_segment_fraction_m3
+          )
+        ) %>%
+        pull(ブートストラップp値),
+      p_bootstrap_m1_m3,
+      tolerance = 1e-12
+    )
+  )
+)
+```
+
 # 第3段階のまとめ
 
 この段階では、$M_1$ と未知の1変化点モデル $M_3$ を、
@@ -1976,17 +2168,19 @@ Monte Carlo標準誤差は `r sprintf("%.4f", mcse_bootstrap_m1_m3)` である�
 ## 目的と解釈上の注意
 
 ここでは、実際に1回の確率変化が存在したと仮定したとき、
-現在の349観測と第3段階の検定手順で、その変化をどの程度検出できるかをsimulationで評価する。
+現在の `r n_slot2` 観測と第3段階の検定手順で、
+その変化をどの程度検出できるかをsimulationで評価する。
 
 この検出力分析は、次の点に注意して解釈する。
 
 1. 「$M_3$ が正しい確率」を求める分析ではない。
 2. 指定した大きさの変化が本当に存在した場合に、現在の検定手順がそれを検出する割合を評価する。
-3. シナリオ2の $p_1=39/114$、$p_2=58/235$ は、実データから最尤変化点を探索した後に得られた値である。winner's curseの可能性があるため、真の効果量の強い推定値ではなく参考シナリオとして扱う。
+3. シナリオ2の $p_1$、$p_2$ は、実データから最尤変化点を探索した後に得られた値である。winner's curseの可能性があるため、真の効果量の強い推定値ではなく参考シナリオとして扱う。
 4. 主な解釈では、事前に意味を定めやすい $p_1=1/3$、$p_2=1/4$ のシナリオを重視する。
 5. 今回の分析全体は時系列グラフを見たことをきっかけに始めた探索的分析であり、検出力分析を加えてもその探索性は消えない。
 
-検出力simulationでも、観測日、日ごとの試行数、154個の候補変化点、
+検出力simulationでも、観測日、日ごとの試行数、
+`r nrow(change_point_candidates_m3)` 個の候補変化点、
 各候補での最尤推定、最大尤度比統計量の計算を第3段階と同じにする。
 真の変化点はデータ生成にだけ使用し、検定アルゴリズムには与えない。
 
@@ -2133,20 +2327,14 @@ estimate_m3_detection_power <- function(
 
 ## 主要な2シナリオ
 
-真の変化点を2026-02-18と2026-02-19の間に固定する。
-この境界はデータ生成には使用するが、検定時には154候補をすべて再探索する。
+真の変化点は、実データで最尤となった境界に固定する。
+この境界はデータ生成には使用するが、検定時には候補をすべて再探索する。
 
 ```{r}
 #| label: simulate-main-power-scenarios
 
 main_true_change_point_m3 <-
-  change_point_profile_m3 %>%
-  filter(
-    変化点直前観測日 ==
-      as.Date("2026-02-18"),
-    変化点直後観測日 ==
-      as.Date("2026-02-19")
-  )
+  best_change_point_m3
 
 stopifnot(
   nrow(main_true_change_point_m3) == 1
@@ -2172,8 +2360,8 @@ scenario1_power_m3 <- estimate_m3_detection_power(
 )
 
 scenario2_power_m3 <- estimate_m3_detection_power(
-  p1 = 39 / 114,
-  p2 = 58 / 235,
+  p1 = best_change_point_m3$前A推定確率,
+  p2 = best_change_point_m3$後A推定確率,
   true_daily_position =
     main_true_daily_position_m3,
   repetitions =
@@ -2190,8 +2378,16 @@ main_power_scenarios_m3 <- bind_rows(
   scenario2_power_m3 %>%
     mutate(
       シナリオ = paste0(
-        "2: p1 = 39/114, ",
-        "p2 = 58/235"
+        "2: p1 = ",
+        scales::percent(
+          best_change_point_m3$前A推定確率,
+          accuracy = 0.1
+        ),
+        ", p2 = ",
+        scales::percent(
+          best_change_point_m3$後A推定確率,
+          accuracy = 0.1
+        )
       )
     )
 ) %>%
@@ -2236,6 +2432,7 @@ effect_p2_grid_m3 <- c(
   0.20,
   0.22,
   0.24,
+  0.25,
   0.26,
   0.28,
   0.30,
@@ -2298,7 +2495,7 @@ effect_power_m3 %>%
 
 ```{r}
 #| label: plot-power-by-effect-size
-#| fig-cap: "p1を1/3、真の変化点を2026-02-18/19に固定したときの検出力。誤差棒はsimulationのMonte Carlo標準誤差から計算した区間。"
+#| fig-cap: "p1を1/3、真の変化点を実データで最尤となった境界に固定したときの検出力。誤差棒はsimulationのMonte Carlo標準誤差から計算した区間。"
 
 ggplot(
   effect_power_m3,
@@ -2596,7 +2793,7 @@ ggplot(
 ```
 
 この位置分析では、検定側は表示された真の変化点を知らず、
-各simulationで154候補すべてを探索している。
+各simulationで `r nrow(change_point_candidates_m3)` 候補すべてを探索している。
 
 # 第4段階のまとめ
 
@@ -2631,8 +2828,8 @@ late_position_power_m3 <-
   )
 ```
 
-- $p_1=1/3$ から $p_2=1/4$ への変化を2026-02-18/19に置いた場合、現在の検定の推定検出力は `r scales::percent(scenario1_power_m3$推定検出力, accuracy = 0.1)` である。
-- 実データで選ばれた34.2%から24.7%程度の差をそのまま仮定した参考シナリオでは、推定検出力は `r scales::percent(scenario2_power_m3$推定検出力, accuracy = 0.1)` である。ただし、この差にはwinner's curseの可能性がある。
+- $p_1=1/3$ から $p_2=1/4$ への変化を、実データで最尤となった `r main_true_change_point_label_m3` の境界に置いた場合、現在の検定の推定検出力は `r scales::percent(scenario1_power_m3$推定検出力, accuracy = 0.1)` である。
+- 実データで選ばれた `r scales::percent(best_change_point_m3$前A推定確率, accuracy = 0.1)` から `r scales::percent(best_change_point_m3$後A推定確率, accuracy = 0.1)` 程度の差をそのまま仮定した参考シナリオでは、推定検出力は `r scales::percent(scenario2_power_m3$推定検出力, accuracy = 0.1)` である。ただし、この差にはwinner's curseの可能性がある。
 - `r effect_power_interpretation_m3`
 - $p_1=1/3$、$p_2=1/4$ の位置分析では、前側が約50%となる中央付近の推定検出力は `r scales::percent(central_position_power_m3$推定検出力, accuracy = 0.1)`、候補範囲の前端寄りでは `r scales::percent(early_position_power_m3$推定検出力, accuracy = 0.1)`、後端寄りでは `r scales::percent(late_position_power_m3$推定検出力, accuracy = 0.1)` である。
 
