@@ -6,6 +6,9 @@ Pokémon Sleep の食材パターンについて、
 分析は R / Quarto で行い、
 分析結果をもとに note 向けの記事を作成する。
 
+分析コード、固定した入力データ、詳細な計算結果を公開できるよう、
+Quartoのウェブサイトとしても構成している。
+
 ## ディレクトリ構成
 
 ```text
@@ -16,13 +19,24 @@ Pokémon Sleep の食材パターンについて、
 │   └── archive/
 │       └── ingredient_patterns_model_analyses.qmd
 │
+├── data/
+│   ├── README.md
+│   └── ingredient_patterns_2025-11-16_2026-09-05.csv
+│
+├── R/
+│   └── setup_plot_font.R
+│
+├── scripts/
+│   └── update_data_snapshot.R
+│
 ├── article/
 │   ├── 01_probability.md
 │   ├── 02_slot2_time.md
 │   └── figures/
 │
-├── rendered/
-│
+├── index.qmd
+├── renv.lock
+├── renv/
 ├── README.md
 ├── AGENTS.md
 ├── ANALYSIS_SUMMARY.md
@@ -130,17 +144,76 @@ AAAの増減がどの要素によって生じているかを見る。
 
 ## データ
 
-元データは Google Sheets 上で継続的に更新している。
+記事と公開分析では、次の固定データを使用する。
+
+```text
+data/ingredient_patterns_2025-11-16_2026-09-05.csv
+```
+
+このCSVには、2025-11-16から2026-09-05までの360個体について、
+分析に必要な日付と食材パターンの情報だけを収録している。
+列の説明は `data/README.md` を参照すること。
+
+元データはGoogle Sheets上で継続的に更新しているが、
+分析ファイルは直接シートを読まず、固定CSVを読み込む。
+このため、シートの更新やGoogleアカウントの認証によって、
+公開済み記事の結果が変わることはない。
 
 主なデータフレーム：
 
-- `df_org`: 読み込んだ元データ
+- `df_org`: 読み込んだ固定公開データ
 - `df`: 収集開始後かつ3食材種のみ
 - `df2`: 収集開始後。2枠目の分析では2食材種も含める
 
 したがって、
 2枠目の分析と3枠目・6パターンの分析では
 サンプルサイズが異なる場合がある。
+
+Google Sheetsから固定CSVを作り直す方法は、
+`data/README.md` と `scripts/update_data_snapshot.R` に記載している。
+
+## 分析の再実行
+
+作成時の主な実行環境は次のとおり。
+
+```text
+R 4.3.1
+Quarto 1.9.38
+```
+
+パッケージのバージョンは `renv.lock` に記録する。
+リポジトリを取得した後、プロジェクトのルートで次を実行する。
+
+```r
+install.packages("renv")
+renv::restore()
+```
+
+分析サイト全体の生成：
+
+```sh
+quarto render
+```
+
+ローカルでの確認：
+
+```sh
+quarto preview
+```
+
+生成物は `_site/` に出力され、Git管理には含めない。
+
+## 公開
+
+GitHubリポジトリを設定した後、Quartoの分析サイトは
+GitHub Pagesへ次のコマンドで公開できる。
+
+```sh
+quarto publish gh-pages
+```
+
+記事を公開した時点のコードとデータにはGitタグを付け、
+どの版が各記事に対応するか分かるようにする。
 
 ## 基本的な作業の流れ
 
@@ -150,4 +223,4 @@ AAAの増減がどの要素によって生じているかを見る。
 4. `article/` で記事を書く
 5. 分析結果と記事中の数値・表現を照合する
 
-`rendered/` は Quarto の生成物であり、Git管理しない。
+`_site/` は Quarto の生成物であり、Git管理しない。

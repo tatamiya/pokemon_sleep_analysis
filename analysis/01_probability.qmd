@@ -4,8 +4,10 @@ format:
   html:
     toc: true
     toc-depth: 3
-    code-fold: false
+    code-fold: true
+    code-summary: "コードを表示"
     code-tools: true
+    code-overflow: wrap
     df-print: paged
 execute:
   echo: true
@@ -23,7 +25,6 @@ library(scales)
 library(showtext)
 library(slider)
 library(patchwork)
-library(googlesheets4)
 
 knitr::opts_chunk$set(
   fig.width = 12,
@@ -31,27 +32,34 @@ knitr::opts_chunk$set(
   dpi = 120
 )
 
-# Google Fontsから日本語フォント（Noto Sans JPなど）を追加
-font_add_google("Noto Sans JP", "noto")
-
-# showtextを有効化（これ以降の描画で適用される）
-showtext_auto()
-
-gs4_auth()
+source("R/setup_plot_font.R")
+configure_plot_font()
 ```
 
 # データ
 
 ## データ読み込み
 
+記事公開時点の分析を再現するため、
+2025-11-16から2026-09-05までの記録を固定した公開用CSVを読み込む。
+列の内容と抽出条件は `data/README.md` に記載している。
+
 ```{r}
 #| label: load-data
 
-sheet_url <- "SPREADSHEET_URL_REMOVED_BEFORE_PUBLICATION"
+data_path <- file.path(
+  "data",
+  "ingredient_patterns_2025-11-16_2026-09-05.csv"
+)
 
-df_org <- read_sheet(sheet_url,
-  sheet = "記録一覧"
-                     )
+df_org <- read_csv(
+  data_path,
+  col_types = cols(
+    日付 = col_date(),
+    食材種数 = col_integer(),
+    .default = col_character()
+  )
+)
 
 glimpse(df_org)
 ```
@@ -62,16 +70,14 @@ analysis_end_date <- as.Date("2026-09-05")
 
 df <- df_org %>%
   filter(
-    is.na(`収集開始前分`),
     as.Date(日付) >= analysis_start_date,
-    as.Date(日付) <= analysis_end_date
-  ) %>%
-  filter(is.na(`2枠種フラグ`))
+    as.Date(日付) <= analysis_end_date,
+    食材種数 == 3L
+  )
 
 # 2食材種含む
 df2 <- df_org %>%
   filter(
-    is.na(`収集開始前分`),
     as.Date(日付) >= analysis_start_date,
     as.Date(日付) <= analysis_end_date
   )

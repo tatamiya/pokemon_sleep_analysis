@@ -1,15 +1,35 @@
 project:
-  type: default
-  output-dir: rendered
+  type: website
+  output-dir: _site
+  execute-dir: project
+  render:
+    - index.qmd
+    - analysis/01_probability.qmd
+    - analysis/02_slot2_time.qmd
+
+website:
+  title: "Pokémon Sleep 食材パターン分析"
+  navbar:
+    left:
+      - href: index.qmd
+        text: 概要
+      - href: analysis/01_probability.qmd
+        text: Part 1 分析
+      - href: analysis/02_slot2_time.qmd
+        text: Part 2 分析
 
 format:
   html:
     toc: true
     toc-depth: 3
-    code-fold: false
+    code-fold: true
+    code-summary: "コードを表示"
     code-tools: true
+    code-overflow: wrap
     df-print: paged
 
 execute:
   warning: false
   message: false
+
+lang: ja

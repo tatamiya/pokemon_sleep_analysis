@@ -6,8 +6,10 @@ format:
   html:
     toc: true
     toc-depth: 3
-    code-fold: false
+    code-fold: true
+    code-summary: "コードを表示"
     code-tools: true
+    code-overflow: wrap
     df-print: paged
 execute:
   echo: true
@@ -23,7 +25,6 @@ library(tidyverse)
 library(lubridate)
 library(scales)
 library(slider)
-library(googlesheets4)
 library(showtext)
 library(mgcv)
 
@@ -33,12 +34,8 @@ knitr::opts_chunk$set(
   dpi = 120
 )
 
-font_add_google(
-  "Noto Sans JP",
-  "noto"
-)
-
-showtext_auto()
+source("R/setup_plot_font.R")
+configure_plot_font()
 
 format_p <- function(p) {
   if_else(
@@ -48,7 +45,6 @@ format_p <- function(p) {
   )
 }
 
-gs4_auth()
 ```
 
 # この分析の位置づけ
@@ -84,20 +80,30 @@ $M_2$ と $M_3$ の直接比較は主目的としない。
 
 ## データ読み込み
 
+Part 1と同じ公開用CSVを使用する。
+このCSVは記事公開時点の分析対象を固定したもので、
+Google Sheetsの更新や認証に依存せず再実行できる。
+
 ```{r}
 #| label: load-data
 
-sheet_url <- "SPREADSHEET_URL_REMOVED_BEFORE_PUBLICATION"
-
-df_org <- read_sheet(
-  sheet_url,
-  sheet = "記録一覧"
+data_path <- file.path(
+  "data",
+  "ingredient_patterns_2025-11-16_2026-09-05.csv"
 )
 
-# 収集開始前のデータを除外する。
+df_org <- read_csv(
+  data_path,
+  col_types = cols(
+    日付 = col_date(),
+    食材種数 = col_integer(),
+    .default = col_character()
+  )
+)
+
+# 公開用データは収集開始前の記録を除外済み。
 # 2枠目だけを分析するため、2食材種も含める。
-df2 <- df_org %>%
-  filter(is.na(`収集開始前分`))
+df2 <- df_org
 ```
 
 ## 2枠目A/Bの分析データ
@@ -140,7 +146,7 @@ stopifnot(nrow(slot2_data) > 0)
 
 data_filter_summary <- tibble(
   項目 = c(
-    "収集開始前を除外した行数",
+    "公開データの行数",
     "日付が欠損している行数",
     "2枠目がA/B以外または欠損の行数",
     "分析期間より前のA/B行数",
