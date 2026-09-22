@@ -45,6 +45,85 @@ format_p <- function(p) {
   )
 }
 
+article_figure_dir <- file.path(
+  "article",
+  "figures",
+  "02_slot2_time"
+)
+
+dir.create(
+  article_figure_dir,
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+save_article_figure <- function(
+  plot,
+  filename,
+  width = 12,
+  height = 7
+) {
+  showtext::showtext_opts(
+    dpi = 240
+  )
+
+  on.exit(
+    showtext::showtext_opts(
+      dpi = knitr::opts_chunk$get(
+        "dpi"
+      )
+    ),
+    add = TRUE
+  )
+
+  ggsave(
+    filename = file.path(
+      article_figure_dir,
+      filename
+    ),
+    plot = plot,
+    width = width,
+    height = height,
+    units = "in",
+    dpi = 240,
+    bg = "white"
+  )
+}
+
+article_plot_theme <- function(base_size = 18) {
+  theme_minimal(
+    base_size = base_size,
+    base_family = "noto"
+  ) +
+    theme(
+      plot.title = element_text(
+        size = 26,
+        face = "bold"
+      ),
+      plot.subtitle = element_text(
+        size = 17,
+        margin = margin(b = 12)
+      ),
+      plot.caption = element_text(
+        size = 15,
+        color = "grey30",
+        hjust = 0
+      ),
+      axis.title = element_text(
+        size = 18
+      ),
+      axis.text = element_text(
+        size = 15
+      ),
+      panel.grid.minor = element_blank(),
+      legend.position = "bottom",
+      legend.title = element_blank(),
+      legend.text = element_text(
+        size = 15
+      )
+    )
+}
+
 ```
 
 # この分析の位置づけ
@@ -351,6 +430,47 @@ monthly_slot2 <- slot2_data %>%
     )$conf.int[2]
   ) %>%
   ungroup()
+
+monthly_slot2_article <- monthly_slot2 %>%
+  mutate(
+    表示日 = pmax(
+      analysis_start_date,
+      pmin(
+        月 + days(14),
+        analysis_end_date
+      )
+    )
+  )
+
+article_month_breaks <- seq(
+  floor_date(
+    analysis_start_date,
+    unit = "month"
+  ),
+  floor_date(
+    analysis_end_date,
+    unit = "month"
+  ),
+  by = "month"
+)
+
+article_month_years <- year(
+  article_month_breaks
+)
+
+article_month_labels <- if_else(
+  !duplicated(article_month_years),
+  paste0(
+    article_month_years,
+    "年\n",
+    month(article_month_breaks),
+    "月"
+  ),
+  paste0(
+    month(article_month_breaks),
+    "月"
+  )
+)
 
 monthly_slot2 %>%
   mutate(
@@ -1002,16 +1122,17 @@ prediction_m2 <- prediction_m2 %>%
 #| label: plot-smooth-model
 #| fig-cap: "M2で推定した時間変化と点ごとの95%信頼区間。月次の点と誤差棒は記述的な補助表示である。"
 
-ggplot() +
+article_smooth_plot <- ggplot() +
   geom_hline(
     yintercept = 1 / 3,
     linetype = "dashed",
-    color = "firebrick"
+    color = "grey15",
+    linewidth = 0.9
   ) +
   geom_hline(
     yintercept = p_m1,
     linetype = "dotted",
-    color = "darkorange",
+    color = "grey45",
     linewidth = 0.9
   ) +
   geom_ribbon(
@@ -1021,8 +1142,8 @@ ggplot() +
       ymin = 信頼区間下限,
       ymax = 信頼区間上限
     ),
-    fill = "steelblue",
-    alpha = 0.18
+    fill = "#56B4E9",
+    alpha = 0.22
   ) +
   geom_line(
     data = prediction_m2,
@@ -1030,62 +1151,74 @@ ggplot() +
       x = 日付,
       y = 推定確率
     ),
-    color = "steelblue",
-    linewidth = 1.1
-  ) +
-  geom_errorbar(
-    data = monthly_slot2,
-    aes(
-      x = 月 + days(14),
-      ymin = 信頼区間下限,
-      ymax = 信頼区間上限
-    ),
-    width = 6,
-    color = "grey45",
-    alpha = 0.65
+    color = "#0072B2",
+    linewidth = 1.5
   ) +
   geom_point(
-    data = monthly_slot2,
+    data = monthly_slot2_article,
     aes(
-      x = 月 + days(14),
-      y = A出現割合,
-      size = 試行数
+      x = 表示日,
+      y = A出現割合
     ),
-    color = "grey30",
-    alpha = 0.75
+    color = "grey20",
+    fill = "white",
+    shape = 21,
+    stroke = 1.3,
+    size = 4
   ) +
   scale_x_date(
-    date_breaks = "1 month",
-    date_labels = "%Y-%m"
+    breaks = article_month_breaks,
+    labels = article_month_labels,
+    limits = c(
+      floor_date(
+        analysis_start_date,
+        unit = "month"
+      ),
+      ceiling_date(
+        analysis_end_date,
+        unit = "month"
+      ) - days(1)
+    ),
+    expand = expansion(
+      add = c(8, 8)
+    )
   ) +
   scale_y_continuous(
     labels = scales::label_percent(
       accuracy = 1
+    ),
+    breaks = seq(0, 0.5, by = 0.1),
+    expand = expansion(
+      mult = c(0, 0.03)
     )
   ) +
   coord_cartesian(
-    ylim = c(0, 0.65)
+    ylim = c(-0.015, 0.5)
   ) +
-  theme_minimal(
-    base_family = "noto"
-  ) +
+  article_plot_theme() +
   theme(
-    axis.text.x = element_text(
-      angle = 45,
-      hjust = 1
-    ),
-    panel.grid.minor = element_blank()
+    panel.grid.major.x = element_blank()
   ) +
   labs(
     title = "2枠目Aの出現確率の滑らかな時間変化",
-    subtitle = paste0(
-      "青線：M2、青帯：点ごとの95%信頼区間、",
-      "赤破線：1/3、橙点線：M1"
+    subtitle = "2食材種を含む360個体",
+    caption = paste0(
+      "青線：GAMの推定値　青帯：点ごとの95%信頼区間\n",
+      "黒点：月ごとの実測割合　｜　破線：通説値33.3%　",
+      "点線：一定モデル27.5%\n",
+      "2025年11月は16日から、2026年9月は5日までの途中集計"
     ),
-    x = "日付",
+    x = NULL,
     y = "A出現確率",
-    size = "月の試行数"
+    size = NULL
   )
+
+save_article_figure(
+  article_smooth_plot,
+  "slot2_smooth_time_change.png"
+)
+
+article_smooth_plot
 ```
 
 青い信頼帯は各日についての点ごとの区間であり、
@@ -1639,9 +1772,9 @@ best_change_point_summary_m3 %>%
 
 ```{r}
 #| label: plot-change-point-profile
-#| fig-cap: "各点は、その日と直前の観測日の間に変化点を置いた場合のM1からの尤度比改善量。赤点・赤破線は最大尤度の候補。"
+#| fig-cap: "各点は、その日と直前の観測日の間に変化点を置いた場合のM1からの尤度比改善量。青点・青破線は最大尤度の候補。"
 
-ggplot(
+article_change_point_profile_plot <- ggplot(
   change_point_profile_m3,
   aes(
     x = 変化点直後観測日,
@@ -1649,50 +1782,61 @@ ggplot(
   )
 ) +
   geom_line(
-    linewidth = 0.8,
-    color = "steelblue"
+    linewidth = 1,
+    color = "#3366A8"
   ) +
   geom_point(
-    size = 1.2,
-    color = "steelblue"
+    size = 1.8,
+    color = "#3366A8"
   ) +
   geom_vline(
     xintercept = as.numeric(
       best_change_point_m3$変化点直後観測日
     ),
     linetype = "dashed",
-    color = "firebrick"
+    color = "#4C78A8",
+    linewidth = 0.9
   ) +
   geom_point(
     data = best_change_points_m3,
-    color = "firebrick",
-    size = 3
+    color = "#4C78A8",
+    size = 4
   ) +
   scale_x_date(
-    date_breaks = "1 month",
-    date_labels = "%Y-%m"
+    breaks = article_month_breaks,
+    labels = article_month_labels,
+    limits = c(
+      floor_date(
+        analysis_start_date,
+        unit = "month"
+      ),
+      ceiling_date(
+        analysis_end_date,
+        unit = "month"
+      ) - days(1)
+    ),
+    expand = expansion(
+      add = c(8, 8)
+    )
   ) +
   scale_y_continuous(
     expand = expansion(
       mult = c(0.02, 0.08)
     )
   ) +
-  theme_minimal(
-    base_family = "noto"
-  ) +
+  article_plot_theme() +
   theme(
-    axis.text.x = element_text(
-      angle = 45,
-      hjust = 1
-    ),
-    panel.grid.minor = element_blank()
+    panel.grid.major.x = element_blank()
   ) +
   labs(
-    title = "未知の変化点モデルの尤度比プロファイル",
-    subtitle = "各候補で変化点前後のA確率を最尤推定",
-    x = "変化点直後の観測日",
-    y = "M1からの尤度比改善量"
+    title = "変化点候補ごとの当てはまりの改善",
+    subtitle = "前後にそれぞれ20%以上の個体を残す161候補を比較",
+    caption = "青点・破線：最良候補（2月18日―19日の間）",
+    x = "変化点の候補日",
+    y = "一定モデルからの改善量"
   )
+
+article_change_point_profile_plot
 ```
 
 ## 最尤変化点モデルの可視化
@@ -1717,17 +1861,26 @@ prediction_m3 <- tibble(
     )
   )
 
-ggplot() +
+article_change_point_plot <- ggplot() +
   geom_hline(
     yintercept = 1 / 3,
     linetype = "dashed",
-    color = "firebrick"
+    color = "grey15",
+    linewidth = 0.9
   ) +
   geom_hline(
     yintercept = p_m1,
     linetype = "dotted",
-    color = "darkorange",
+    color = "grey45",
     linewidth = 0.9
+  ) +
+  geom_vline(
+    xintercept = as.numeric(
+      best_change_point_m3$変化点直後観測日
+    ),
+    color = "#4C78A8",
+    linewidth = 0.8,
+    alpha = 0.65
   ) +
   geom_step(
     data = prediction_m3,
@@ -1735,62 +1888,118 @@ ggplot() +
       x = 日付,
       y = 推定確率
     ),
-    color = "darkgreen",
-    linewidth = 1.1,
+    color = "#4C78A8",
+    linewidth = 1.5,
     direction = "hv"
   ) +
-  geom_errorbar(
-    data = monthly_slot2,
-    aes(
-      x = 月 + days(14),
-      ymin = 信頼区間下限,
-      ymax = 信頼区間上限
-    ),
-    width = 6,
-    color = "grey45",
-    alpha = 0.65
-  ) +
   geom_point(
-    data = monthly_slot2,
+    data = monthly_slot2_article,
     aes(
-      x = 月 + days(14),
-      y = A出現割合,
-      size = 試行数
+      x = 表示日,
+      y = A出現割合
     ),
-    color = "grey30",
-    alpha = 0.75
+    color = "grey20",
+    fill = "white",
+    shape = 21,
+    stroke = 1.3,
+    size = 4
+  ) +
+  annotate(
+    "label",
+    x = as.Date("2026-01-05"),
+    y = best_change_point_m3$前A推定確率 + 0.035,
+    label = paste0(
+      "変化前 ",
+      scales::percent(
+        best_change_point_m3$前A推定確率,
+        accuracy = 0.1
+      )
+    ),
+    family = "noto",
+    size = 5,
+    linewidth = 0,
+    fill = alpha("white", 0.88),
+    color = "grey10"
+  ) +
+  annotate(
+    "label",
+    x = as.Date("2026-06-01"),
+    y = best_change_point_m3$後A推定確率 - 0.035,
+    label = paste0(
+      "変化後 ",
+      scales::percent(
+        best_change_point_m3$後A推定確率,
+        accuracy = 0.1
+      )
+    ),
+    family = "noto",
+    size = 5,
+    linewidth = 0,
+    fill = alpha("white", 0.88),
+    color = "grey10"
+  ) +
+  annotate(
+    "text",
+    x = best_change_point_m3$変化点直後観測日 + days(5),
+    y = 0.47,
+    label = "最尤境界\n2月18日―19日",
+    family = "noto",
+    size = 4.5,
+    hjust = 0,
+    color = "grey10"
   ) +
   scale_x_date(
-    date_breaks = "1 month",
-    date_labels = "%Y-%m"
+    breaks = article_month_breaks,
+    labels = article_month_labels,
+    limits = c(
+      floor_date(
+        analysis_start_date,
+        unit = "month"
+      ),
+      ceiling_date(
+        analysis_end_date,
+        unit = "month"
+      ) - days(1)
+    ),
+    expand = expansion(
+      add = c(8, 8)
+    )
   ) +
   scale_y_continuous(
     labels = scales::label_percent(
       accuracy = 1
+    ),
+    breaks = seq(0, 0.5, by = 0.1),
+    expand = expansion(
+      mult = c(0, 0.03)
     )
   ) +
   coord_cartesian(
-    ylim = c(0, 0.65)
+    ylim = c(-0.015, 0.5)
   ) +
-  theme_minimal(
-    base_family = "noto"
-  ) +
+  article_plot_theme() +
   theme(
-    axis.text.x = element_text(
-      angle = 45,
-      hjust = 1
-    ),
-    panel.grid.minor = element_blank()
+    panel.grid.major.x = element_blank()
   ) +
   labs(
-    title = "最尤変化点モデルによる2枠目Aの推定確率",
-    subtitle = paste0(
-      "緑線：M3、赤破線：1/3、橙点線：M1"
+    title = "2枠目Aの月次割合と最尤変化点モデル",
+    subtitle = "2食材種を含む360個体",
+    caption = paste0(
+      "青線：1変化点モデル　黒点：月ごとの実測割合\n",
+      "破線：通説値33.3%　点線：一定モデル27.5%\n",
+      "2025年11月は16日から、2026年9月は5日までの途中集計"
     ),
-    x = "日付",
+    x = NULL,
     y = "A出現確率",
-    size = "月の試行数"
+    size = NULL
   )
+
+save_article_figure(
+  article_change_point_plot,
+  "slot2_monthly_change_point.png"
+)
+
+article_change_point_plot
 ```
 
 # 固定確率モデルと未知の変化点モデルの比較
@@ -2503,18 +2712,13 @@ effect_power_m3 %>%
 #| label: plot-power-by-effect-size
 #| fig-cap: "p1を1/3、真の変化点を実データで最尤となった境界に固定したときの検出力。誤差棒はsimulationのMonte Carlo標準誤差から計算した区間。"
 
-ggplot(
+article_power_plot <- ggplot(
   effect_power_m3,
   aes(
     x = p2,
     y = 推定検出力
   )
 ) +
-  geom_hline(
-    yintercept = 0.8,
-    linetype = "dashed",
-    color = "grey45"
-  ) +
   geom_errorbar(
     aes(
       ymin = 信頼区間下限,
@@ -2524,41 +2728,91 @@ ggplot(
     color = "steelblue"
   ) +
   geom_line(
-    linewidth = 0.9,
+    linewidth = 1.2,
     color = "steelblue"
   ) +
   geom_point(
-    size = 2.5,
+    size = 3.8,
     color = "steelblue"
   ) +
+  geom_point(
+    data = effect_power_m3 %>%
+      filter(p2 %in% c(0.20, 0.25, 0.30)),
+    size = 4.2,
+    color = "#D55E00"
+  ) +
+  geom_label(
+    data = effect_power_m3 %>%
+      filter(p2 %in% c(0.20, 0.25, 0.30)),
+    aes(
+      label = scales::percent(
+        推定検出力,
+        accuracy = 1
+      )
+    ),
+    family = "noto",
+    size = 4.5,
+    vjust = -1,
+    linewidth = 0,
+    fill = alpha("white", 0.9),
+    color = "grey10"
+  ) +
   scale_x_continuous(
-    breaks = effect_p2_grid_m3,
+    breaks = c(
+      0.20,
+      0.22,
+      0.24,
+      0.25,
+      0.26,
+      0.28,
+      0.30,
+      0.32,
+      1 / 3
+    ),
     labels = scales::label_percent(
-      accuracy = 0.1
+      accuracy = 1
+    ),
+    expand = expansion(
+      mult = c(0.03, 0.04)
     )
   ) +
   scale_y_continuous(
-    limits = c(0, 1),
     labels = scales::label_percent(
       accuracy = 1
+    ),
+    breaks = seq(0, 0.7, by = 0.1),
+    expand = expansion(
+      mult = c(0, 0.08)
     )
   ) +
-  theme_minimal(
-    base_family = "noto"
+  coord_cartesian(
+    ylim = c(0, 0.7)
   ) +
+  article_plot_theme() +
   theme(
     axis.text.x = element_text(
       angle = 45,
       hjust = 1
     ),
-    panel.grid.minor = element_blank()
+    panel.grid.major.x = element_blank()
   ) +
   labs(
     title = "変化後のA確率と変化点検定の検出力",
-    subtitle = "p1 = 1/3、灰色破線：検出力80%",
-    x = "変化後の確率 p2",
+    subtitle = NULL,
+    caption = paste0(
+      "変化前は1/3、真の変化点は2月18日―19日の間としたシナリオ\n",
+      "各条件5,000回　｜　検定時には真の変化点を与えず、161候補を毎回探索"
+    ),
+    x = "変化後のA出現確率",
     y = "推定検出力"
   )
+
+save_article_figure(
+  article_power_plot,
+  "change_point_power_by_effect_size.png"
+)
+
+article_power_plot
 ```
 
 ```{r}
@@ -2842,3 +3096,255 @@ late_position_power_m3 <-
 これらは指定したシナリオのもとでの検出確率であり、
 $M_3$ が正しい確率や、観測データに変化点が存在する確率ではない。
 $M_2$ と $M_3$ の直接比較、および履歴依存モデルの追加は行っていない。
+
+# 次の問いに向けた6パターンの月次推移
+
+次の分析候補を確認するため、3食材種の353個体について、
+6パターンそれぞれの月次出現割合を記述的に可視化する。
+この図から時間変化や履歴依存の有無を判定するものではない。
+
+```{r}
+#| label: prepare-monthly-six-patterns
+
+ingredient_pattern_levels <- c(
+  "AAA",
+  "AAB",
+  "AAC",
+  "ABA",
+  "ABB",
+  "ABC"
+)
+
+monthly_six_patterns <- df_org %>%
+  filter(
+    日付 >= analysis_start_date,
+    日付 <= analysis_end_date,
+    食材種数 == 3,
+    食材パターン %in%
+      ingredient_pattern_levels
+  ) %>%
+  mutate(
+    月 = floor_date(日付, unit = "month")
+  ) %>%
+  count(
+    月,
+    食材パターン,
+    name = "出現数"
+  ) %>%
+  complete(
+    月 = seq(
+      floor_date(
+        analysis_start_date,
+        unit = "month"
+      ),
+      floor_date(
+        analysis_end_date,
+        unit = "month"
+      ),
+      by = "month"
+    ),
+    食材パターン = ingredient_pattern_levels,
+    fill = list(出現数 = 0L)
+  ) %>%
+  group_by(月) %>%
+  mutate(
+    月合計 = sum(出現数),
+    出現割合 = 出現数 / 月合計
+  ) %>%
+  ungroup() %>%
+  mutate(
+    食材パターン = factor(
+      食材パターン,
+      levels = ingredient_pattern_levels
+    ),
+    `3枠目` = factor(
+      str_sub(
+        as.character(食材パターン),
+        3,
+        3
+      ),
+      levels = c("A", "B", "C")
+    ),
+    側 = factor(
+      if_else(
+        str_sub(
+          as.character(食材パターン),
+          2,
+          2
+        ) == "A",
+        "AA*（AAA・AAB・AAC）",
+        "AB*（ABA・ABB・ABC）"
+      ),
+      levels = c(
+        "AA*（AAA・AAB・AAC）",
+        "AB*（ABA・ABB・ABC）"
+      )
+    )
+  )
+
+six_pattern_theory <- tibble(
+  食材パターン = factor(
+    ingredient_pattern_levels,
+    levels = ingredient_pattern_levels
+  ),
+  通説値 = c(
+    rep(1 / 9, 3),
+    rep(2 / 9, 3)
+  ),
+  側 = factor(
+    c(
+      rep("AA*（AAA・AAB・AAC）", 3),
+      rep("AB*（ABA・ABB・ABC）", 3)
+    ),
+    levels = c(
+      "AA*（AAA・AAB・AAC）",
+      "AB*（ABA・ABB・ABC）"
+    )
+  )
+)
+
+stopifnot(
+  sum(
+    monthly_six_patterns$出現数
+  ) == 353L
+)
+
+last_complete_month <- floor_date(
+  analysis_end_date,
+  unit = "month"
+) - months(1)
+
+monthly_six_patterns_article <-
+  monthly_six_patterns %>%
+  filter(
+    月 <= last_complete_month
+  )
+
+article_complete_month_breaks <-
+  article_month_breaks[
+    article_month_breaks <=
+      last_complete_month
+  ]
+
+six_pattern_article_n <- sum(
+  monthly_six_patterns_article$出現数
+)
+
+six_pattern_excluded_n <- sum(
+  monthly_six_patterns$出現数[
+    monthly_six_patterns$月 >
+      last_complete_month
+  ]
+)
+```
+
+```{r}
+#| label: plot-monthly-six-patterns-for-article
+#| fig-cap: "3食材種のうち2026年8月までに観測した349個体における6パターンの月次出現割合。破線は通説値。2026年9月の途中集計4個体は除外した。"
+
+slot3_monthly_colors <- c(
+  A = "#4C78A8",
+  B = "#F28E2B",
+  C = "#59A14F"
+)
+
+article_six_pattern_plot <- ggplot(
+  monthly_six_patterns_article,
+  aes(
+    x = 月,
+    y = 出現割合,
+    color = `3枠目`,
+    group = 食材パターン
+  )
+) +
+  geom_hline(
+    data = six_pattern_theory,
+    aes(
+      yintercept = 通説値
+    ),
+    linetype = "dashed",
+    color = "grey35",
+    linewidth = 0.8
+  ) +
+  geom_line(
+    linewidth = 1.3
+  ) +
+  geom_point(
+    size = 3.5
+  ) +
+  facet_wrap(
+    vars(側),
+    ncol = 1,
+    scales = "free_y"
+  ) +
+  scale_color_manual(
+    values = slot3_monthly_colors,
+    labels = c(
+      A = "3枠目 A",
+      B = "3枠目 B",
+      C = "3枠目 C"
+    ),
+    guide = guide_legend(
+      nrow = 1
+    )
+  ) +
+  scale_x_date(
+    breaks = article_complete_month_breaks,
+    labels = article_month_labels[
+      article_month_breaks <=
+        last_complete_month
+    ],
+    expand = expansion(
+      add = c(10, 10)
+    )
+  ) +
+  scale_y_continuous(
+    labels = scales::label_percent(
+      accuracy = 1
+    ),
+    breaks = scales::breaks_width(
+      0.1
+    ),
+    expand = expansion(
+      mult = c(0.02, 0.08)
+    )
+  ) +
+  article_plot_theme() +
+  theme(
+    strip.text = element_text(
+      size = 19,
+      face = "bold",
+      hjust = 0
+    ),
+    panel.grid.major.x = element_blank(),
+    panel.spacing = unit(
+      1.5,
+      "lines"
+    )
+  ) +
+  labs(
+    title = "6パターンの月次出現割合",
+    subtitle = paste0(
+      "3食材種",
+      six_pattern_article_n,
+      "個体（2026年8月まで）"
+    ),
+    caption = paste0(
+      "破線：通説値（AA* 11.1%、AB* 22.2%）\n",
+      "2025年11月は16日からの途中集計　｜　",
+      "2026年9月の途中集計（",
+      six_pattern_excluded_n,
+      "個体）は除外"
+    ),
+    x = NULL,
+    y = "出現割合"
+  )
+
+save_article_figure(
+  article_six_pattern_plot,
+  "six_patterns_monthly_ratios.png",
+  height = 9
+)
+
+article_six_pattern_plot
+```
