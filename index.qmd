@@ -14,7 +14,10 @@ noteの記事では結果を読みやすく紹介し、
 - [Part 1：食材パターンの出現確率](analysis/01_probability.qmd)
 - [Part 2：2枠目Aの出現確率は時間によらず一定か？](analysis/02_slot2_time.qmd)
 
-Part 1の記事は[noteで公開済み](https://note.com/tatatamiya/n/n4e2a6bc90575)です。
+対応する記事はnoteで公開しています。
+
+- [Part 1：食材パターンの出現確率](https://note.com/tatatamiya/n/n4e2a6bc90575)
+- [Part 2：2枠目Aの出現確率は時間によらず一定か？](https://note.com/tatatamiya/n/nf87c5c68a67d)
 
 ## データと再現方法
 
