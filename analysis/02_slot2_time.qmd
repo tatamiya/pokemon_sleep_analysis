@@ -1,4 +1,3 @@
-pyenv: cannot rehash: /Users/tatamiya/.pyenv/shims isn't writable
 ---
 title: "2枠目Aの出現確率は時間によらず一定か？"
 subtitle: "固定確率・1変化点・滑らかな時間変化"
