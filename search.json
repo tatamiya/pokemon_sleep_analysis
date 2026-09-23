@@ -4,7 +4,7 @@
     "href": "analysis/02_slot2_time.html",
     "title": "2枠目Aの出現確率は時間によらず一定か？",
     "section": "",
-    "text": "title: “2枠目Aの出現確率は時間によらず一定か？” subtitle: “固定確率・1変化点・滑らかな時間変化” lang: ja format: html: toc: true toc-depth: 3 code-fold: true code-summary: “コードを表示” code-tools: true code-overflow: wrap df-print: paged execute: echo: true warning: false message: false —"
+    "text": "analysis/01_probability.qmd では、全期間をまとめた2枠目Aの出現割合が、 通説上の確率 \\(1/3\\) より低いという結果が得られた。\nここで新たに調べたい主な問いは、2枠目Aの出現確率が時間によらず一定とみなせるかである。 比較の基準には、全期間で一つの未知の確率を共有する一定モデルを用いる。\n\\[\nM_1: p_t = p\n\\]\n通説値 \\(p=1/3\\) との比較はPart 1で扱ったため、 この分析の中心は \\(M_1\\) と時間変化モデルの比較に置く。 通説値との比較は、最後に補足として掲載する。\n本記事の主分析では、全期間で確率が一定の \\(M_1\\) と、 期間中に1回だけ確率が変わる1変化点モデル \\(M_3\\) を比較する。 変化点は事前に3月などへ固定せず、候補範囲から推定する。 ただし、急変ではなく緩やかに変化した可能性もあるため、 滑らかな時間変化モデル \\(M_2\\) と \\(M_1\\) の比較も補足的に行う。 \\(M_2\\) と \\(M_3\\) の直接比較は主目的としない。\n以下では記事と同じく、基本確認、1変化点モデル \\(M_3\\)、 滑らかな時間変化モデル \\(M_2\\)、1変化点検定の検出力の順に示す。"
   },
   {
     "objectID": "analysis/02_slot2_time.html#pyenv-cannot-rehash-userstatamiya.pyenvshims-isnt-writable",
