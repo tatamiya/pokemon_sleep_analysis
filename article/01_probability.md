@@ -189,6 +189,13 @@ https://wikiwiki.jp/poke_sleep/%E6%A4%9C%E8%A8%BC/%E3%82%B5%E3%83%96%E3%82%B9%E3
 
 さらに上記に加えて、ベイズ推定により各出現確率がどの程度と考えられるかも調べました。
 
+## 分析コードとデータ
+
+この記事で使用したデータ、分析コード、詳しい計算結果は以下に公開しています。
+
+- [Part 1の分析ノート（計算コード・詳細な結果）](https://tatamiya.github.io/pokemon_sleep_analysis/analysis/01_probability.html)
+- [GitHubリポジトリ（分析コード・CSVデータ）](https://github.com/tatamiya/pokemon_sleep_analysis)
+
 # 各食材パターンの出現割合と検定結果
 
 さて、集めたデータでは実際にどのような割合で出ていたのでしょうか。

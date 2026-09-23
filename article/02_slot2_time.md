@@ -130,6 +130,13 @@ https://note.com/tatatamiya/n/n4e2a6bc90575
 ここで評価したのは、一定モデルと1変化点モデルを比較する方法に対する検出力です。
 滑らかな変化モデルについては、同様の検出力分析を行っていません。
 
+## 分析コードとデータ
+
+この記事で使用したデータ、分析コード、詳しい計算結果は以下に公開しています。
+
+- [Part 2の分析ノート（計算コード・詳細な結果）](https://tatamiya.github.io/pokemon_sleep_analysis/analysis/02_slot2_time.html)
+- [GitHubリポジトリ（分析コード・CSVデータ）](https://github.com/tatamiya/pokemon_sleep_analysis)
+
 # 結果
 
 ここでは上記の検証結果について記述します。
