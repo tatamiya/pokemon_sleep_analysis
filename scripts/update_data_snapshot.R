@@ -27,6 +27,7 @@ source_data <- read_sheet(
 
 required_columns <- c(
   "日付",
+  "種類",
   "食材パターン",
   "2枠種フラグ",
   "2枠目",
@@ -54,6 +55,7 @@ public_data <- source_data %>%
   ) %>%
   transmute(
     日付 = as.Date(日付),
+    ポケモン名 = as.character(種類),
     食材種数 = if_else(
       is.na(`2枠種フラグ`),
       3L,
@@ -67,6 +69,8 @@ public_data <- source_data %>%
 
 stopifnot(
   nrow(public_data) > 0,
+  all(!is.na(public_data$ポケモン名)),
+  all(nzchar(trimws(public_data$ポケモン名))),
   all(public_data$食材種数 %in% c(2L, 3L)),
   all(public_data$食材パターン %in% c(
     "AAA", "AAB", "AAC",

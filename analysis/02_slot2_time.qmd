@@ -1,6 +1,7 @@
+pyenv: cannot rehash: /Users/tatamiya/.pyenv/shims isn't writable
 ---
 title: "2枠目Aの出現確率は時間によらず一定か？"
-subtitle: "固定確率・未知の変化点・滑らかな時間変化"
+subtitle: "固定確率・1変化点・滑らかな時間変化"
 lang: ja
 format:
   html:
@@ -132,28 +133,25 @@ article_plot_theme <- function(base_size = 18) {
 通説上の確率 $1/3$ より低いという結果が得られた。
 
 ここで新たに調べたい主な問いは、2枠目Aの出現確率が時間によらず一定とみなせるかである。
-比較の基準となる固定確率モデルを、次のように定義する。
-
-$$
-M_0: p_t = \frac{1}{3}
-$$
+比較の基準には、全期間で一つの未知の確率を共有する一定モデルを用いる。
 
 $$
 M_1: p_t = p
 $$
 
-$M_0$ と $M_1$ の比較は第1記事との橋渡しであり、
-この分析の中心は、今後 $M_1$ と非定常モデルを比較することにある。
+通説値 $p=1/3$ との比較はPart 1で扱ったため、
+この分析の中心は $M_1$ と時間変化モデルの比較に置く。
+通説値との比較は、最後に補足として掲載する。
 
 本記事の主分析では、全期間で確率が一定の $M_1$ と、
-期間中に1回だけ確率が変わる未知の変化点モデル $M_3$ を比較する。
+期間中に1回だけ確率が変わる1変化点モデル $M_3$ を比較する。
 変化点は事前に3月などへ固定せず、候補範囲から推定する。
 ただし、急変ではなく緩やかに変化した可能性もあるため、
 滑らかな時間変化モデル $M_2$ と $M_1$ の比較も補足的に行う。
 $M_2$ と $M_3$ の直接比較は主目的としない。
 
-分析コードは、基本確認、$M_2$、$M_3$、検出力の順に実装しているが、
-記事では $M_1$ と $M_3$ の比較を先に示す。
+以下では記事と同じく、基本確認、1変化点モデル $M_3$、
+滑らかな時間変化モデル $M_2$、1変化点検定の検出力の順に示す。
 
 # データ
 
@@ -669,22 +667,19 @@ ggplot(
 この図は、時間変化の候補を把握するための記述的な図である。
 重複する移動窓を独立なデータとして検定に使用してはいけない。
 
-# 固定確率モデルの推定と比較
+# 基準となる一定モデル
 
 ## モデル
 
-日次のBinomialデータに対して、次の2モデルを比較する。
-
-$$
-M_0: A_d \sim \operatorname{Binomial}\left(n_d,\frac{1}{3}\right)
-$$
+日次のBinomialデータに対して、全期間でAの出現確率が一定のモデルを当てはめる。
 
 $$
 M_1: A_d \sim \operatorname{Binomial}(n_d,p),
 \qquad p\text{は未知}
 $$
 
-今後の時間変化モデルも同じ日次Binomial尤度を使う。
+$p$ は通説値の $1/3$ に固定せず、全期間のデータから推定する。
+以降の時間変化モデルも同じ日次Binomial尤度を使う。
 
 ```{r}
 #| label: fit-fixed-models
@@ -718,86 +713,14 @@ p_m1 <- plogis(
   unname(coef(model_m1)[1])
 )
 
-log_lik_m0 <- daily_binomial_log_lik(
-  data = daily_slot2,
-  prob = 1 / 3
-)
-
 log_lik_m1 <- daily_binomial_log_lik(
   data = daily_slot2,
   prob = fitted(model_m1)
 )
 
-lr_m0_m1 <- 2 * (
-  log_lik_m1 - log_lik_m0
-)
-
-p_lr_m0_m1 <- pchisq(
-  lr_m0_m1,
-  df = 1,
-  lower.tail = FALSE
-)
-
-binom_m0 <- binom.test(
+binom_m1 <- binom.test(
   x = x_slot2_A,
-  n = n_slot2,
-  p = 1 / 3,
-  alternative = "two.sided"
-)
-
-# 旧来の「全試行を1個のBinomial観測とする計算」と比較する。
-# 絶対的な対数尤度は二項係数が異なるため一致しないが、
-# M0とM1の尤度比ではその差が相殺される。
-p_m1_all_in_one <- x_slot2_A / n_slot2
-
-log_lik_m0_all_in_one <- dbinom(
-  x = x_slot2_A,
-  size = n_slot2,
-  prob = 1 / 3,
-  log = TRUE
-)
-
-log_lik_m1_all_in_one <- dbinom(
-  x = x_slot2_A,
-  size = n_slot2,
-  prob = p_m1_all_in_one,
-  log = TRUE
-)
-
-lr_m0_m1_all_in_one <- 2 * (
-  log_lik_m1_all_in_one -
-    log_lik_m0_all_in_one
-)
-
-binom_m0_from_daily_totals <- binom.test(
-  x = sum(daily_slot2$A出現数),
-  n = sum(daily_slot2$試行数),
-  p = 1 / 3,
-  alternative = "two.sided"
-)
-
-stopifnot(
-  isTRUE(
-    all.equal(
-      p_m1,
-      p_m1_all_in_one,
-      tolerance = 1e-12
-    )
-  ),
-  isTRUE(
-    all.equal(
-      binom_m0$p.value,
-      binom_m0_from_daily_totals$p.value,
-      tolerance = 1e-12
-    )
-  ),
-  isTRUE(
-    all.equal(
-      lr_m0_m1,
-      lr_m0_m1_all_in_one,
-      tolerance = 1e-10
-    )
-  )
+  n = n_slot2
 )
 ```
 
@@ -807,20 +730,11 @@ stopifnot(
 #| label: fixed-model-estimates
 
 fixed_model_summary <- tibble(
-  モデル = c("M0", "M1"),
-  仮定 = c(
-    "p = 1/3",
-    "pは時間によらず一定だが未知"
-  ),
-  推定確率 = c(
-    1 / 3,
-    p_m1
-  ),
-  自由パラメータ数 = c(0L, 1L),
-  日次二項対数尤度 = c(
-    log_lik_m0,
-    log_lik_m1
-  )
+  モデル = "M1",
+  仮定 = "pは時間によらず一定だが未知",
+  推定確率 = p_m1,
+  自由パラメータ数 = 1L,
+  日次二項対数尤度 = log_lik_m1
 )
 
 fixed_model_summary %>%
@@ -838,100 +752,8 @@ fixed_model_summary %>%
 $M_1$ におけるAの推定確率は
 `r scales::percent(p_m1, accuracy = 0.1)` である。
 正確二項信頼区間による95%信頼区間は、
-`r scales::percent(binom_m0$conf.int[1], accuracy = 0.1)` から
-`r scales::percent(binom_m0$conf.int[2], accuracy = 0.1)` である。
-
-## モデル比較
-
-```{r}
-#| label: compare-fixed-models
-
-fixed_model_comparison <- tibble(
-  A出現数 = x_slot2_A,
-  総試行数 = n_slot2,
-  A実測割合 = x_slot2_A / n_slot2,
-  正確二項検定p値 = binom_m0$p.value,
-  尤度比統計量 = lr_m0_m1,
-  尤度比検定p値 = p_lr_m0_m1
-)
-
-fixed_model_comparison %>%
-  mutate(
-    A実測割合 = scales::percent(
-      A実測割合,
-      accuracy = 0.1
-    )
-  ) %>%
-  knitr::kable(
-    digits = 4
-  )
-```
-
-## 集約単位を変更しても変わらない量
-
-```{r}
-#| label: check-likelihood-aggregation
-
-likelihood_aggregation_check <- tibble(
-  計算方法 = c(
-    "全試行を1個のBinomial観測として集約",
-    "観測日ごとのBinomial観測"
-  ),
-  M1推定確率 = c(
-    p_m1_all_in_one,
-    p_m1
-  ),
-  正確二項検定p値 = c(
-    binom_m0$p.value,
-    binom_m0_from_daily_totals$p.value
-  ),
-  M0対M1尤度比統計量 = c(
-    lr_m0_m1_all_in_one,
-    lr_m0_m1
-  )
-)
-
-likelihood_aggregation_check %>%
-  mutate(
-    M1推定確率 = scales::percent(
-      M1推定確率,
-      accuracy = 0.1
-    )
-  ) %>%
-  knitr::kable(
-    digits = 6
-  )
-```
-
-Binomial観測のまとめ方を変えると、二項係数が変わるため、
-$M_0$ と $M_1$ それぞれの絶対的な対数尤度は変化する。
-一方、同じ集約単位で計算した2モデル間の尤度比では二項係数が相殺される。
-そのため、$M_1$ の推定確率、正確二項検定、尤度比統計量は変わらない。
-
-```{r}
-#| label: fixed-model-interpretation
-#| include: false
-
-m0_interpretation <- if (
-  binom_m0$p.value < 0.05
-) {
-  paste0(
-    "通常の5%有意水準では、固定確率 $p=1/3$ という帰無仮説は棄却される。"
-  )
-} else {
-  paste0(
-    "通常の5%有意水準では、固定確率 $p=1/3$ という帰無仮説は棄却されない。"
-  )
-}
-```
-
-正確二項検定のp値は `r format_p(binom_m0$p.value)` である。
-`r m0_interpretation`
-
-ただし、この比較で分かるのは、全期間を一つの固定確率としてまとめたときに、
-$1/3$ と整合的かどうかである。
-$M_1$ の方が $M_0$ より適合しても、出現確率が時間を通じて一定であることを
-示したことにはならない。
+`r scales::percent(binom_m1$conf.int[1], accuracy = 0.1)` から
+`r scales::percent(binom_m1$conf.int[2], accuracy = 0.1)` である。
 
 # 第1段階までのまとめ
 
@@ -941,537 +763,16 @@ $M_1$ の方が $M_0$ より適合しても、出現確率が時間を通じて�
 - 日次のA出現数、B出現数、試行数を集計した
 - データ期間、総観測数、日ごとの試行数を確認した
 - 月次割合と30日移動割合を記述的に可視化した
-- $M_0:p=1/3$ と $M_1:p=\text{一定の未知値}$ を推定・比較した
+- 基準となる $M_1:p=\text{一定の未知値}$ を推定した
 
-次節では、$M_1$ を基準として滑らかな時間変化モデル $M_2$ を比較する。
-月次グラフや30日移動割合の形だけから、変化の有無を確定しない。
+次節では、$M_1$ を基準として1変化点モデル $M_3$ を比較する。
+月次グラフや30日移動割合の形だけから、変化点を決め打ちしない。
 
-# 滑らかな時間変化モデル
+# 1変化点モデル
 
 ## モデル
 
-滑らかな時間変化モデルを、二項GAMとして定義する。
-
-$$
-M_2:
-A_d \sim \operatorname{Binomial}(n_d,p_d),
-\qquad
-\operatorname{logit}(p_d)=\beta_0+f(t_d)
-$$
-
-$f(t)$ にはthin plate regression splineを使用する。
-基底次元は $k=10$ に固定し、平滑化パラメータはREMLで推定する。
-低下方向や単調性は仮定しない。
-
-```{r}
-#| label: fit-smooth-model
-
-daily_m2_data <- daily_slot2 %>%
-  mutate(
-    経過日 = as.integer(
-      日付 - min(日付)
-    )
-  )
-
-basis_dimension_m2 <- 10L
-
-model_m2 <- gam(
-  cbind(A出現数, B出現数) ~
-    s(
-      経過日,
-      bs = "tp",
-      k = 10
-    ),
-  family = binomial(),
-  method = "REML",
-  data = daily_m2_data
-)
-
-log_lik_m2 <- daily_binomial_log_lik(
-  data = daily_m2_data,
-  prob = fitted(model_m2)
-)
-
-lr_m1_m2 <- 2 * (
-  log_lik_m2 - log_lik_m1
-)
-
-deviance_improvement_m2 <-
-  deviance(model_m1) -
-    deviance(model_m2)
-
-stopifnot(
-  isTRUE(
-    all.equal(
-      lr_m1_m2,
-      deviance_improvement_m2,
-      tolerance = 1e-8
-    )
-  )
-)
-```
-
-## 推定結果
-
-```{r}
-#| label: summarize-smooth-model
-
-summary_m2 <- summary(model_m2)
-smooth_table_m2 <- summary_m2$s.table
-
-m2_smooth_summary <- tibble(
-  平滑項 = rownames(smooth_table_m2),
-  基底次元 = basis_dimension_m2,
-  有効自由度 = unname(
-    smooth_table_m2[, "edf"]
-  ),
-  参照自由度 = unname(
-    smooth_table_m2[, "Ref.df"]
-  ),
-  近似Chi二乗 = unname(
-    smooth_table_m2[, "Chi.sq"]
-  ),
-  近似p値 = unname(
-    smooth_table_m2[, "p-value"]
-  )
-)
-
-m2_smooth_edf <- m2_smooth_summary$有効自由度[[1]]
-
-m2_smooth_summary %>%
-  knitr::kable(
-    digits = 4
-  )
-```
-
-平滑項の有効自由度は `r sprintf("%.3f", m2_smooth_edf)` である。
-`r if (m2_smooth_edf < 1.1) "現在選択された曲線はlogitスケール上でほぼ直線であり、強い曲率は推定されていない。" else "現在選択された曲線には、logitスケール上で直線では表せない曲率が含まれている。"`
-
-上表のp値はGAMの通常の近似検定による参考値である。
-平滑化の選択を含めた主な比較には、後述するパラメトリック・ブートストラップを使用する。
-
-```{r}
-#| label: check-smooth-basis
-
-set.seed(20260824)
-
-k_check_m2 <- k.check(
-  model_m2,
-  n.rep = 1000
-) %>%
-  as.data.frame() %>%
-  rownames_to_column(
-    var = "平滑項"
-  ) %>%
-  as_tibble()
-
-k_check_m2 %>%
-  knitr::kable(
-    digits = 4
-  )
-```
-
-`k-index` は、指定した基底次元が小さすぎないかを確認するための診断である。
-この診断も確証的な検定としてではなく、モデル設定の点検に使用する。
-
-## 推定された時間変化
-
-```{r}
-#| label: predict-smooth-model
-
-prediction_m2 <- tibble(
-  日付 = seq(
-    min(daily_m2_data$日付),
-    max(daily_m2_data$日付),
-    by = "day"
-  )
-) %>%
-  mutate(
-    経過日 = as.integer(
-      日付 - min(daily_m2_data$日付)
-    )
-  )
-
-prediction_link_m2 <- predict(
-  model_m2,
-  newdata = prediction_m2,
-  type = "link",
-  se.fit = TRUE,
-  unconditional = TRUE
-)
-
-prediction_m2 <- prediction_m2 %>%
-  mutate(
-    link = as.numeric(
-      prediction_link_m2$fit
-    ),
-    link_se = as.numeric(
-      prediction_link_m2$se.fit
-    ),
-    推定確率 = plogis(link),
-    信頼区間下限 = plogis(
-      link - qnorm(0.975) * link_se
-    ),
-    信頼区間上限 = plogis(
-      link + qnorm(0.975) * link_se
-    )
-  )
-```
-
-```{r}
-#| label: plot-smooth-model
-#| fig-cap: "M2で推定した時間変化と点ごとの95%信頼区間。月次の点と誤差棒は記述的な補助表示である。"
-
-article_smooth_plot <- ggplot() +
-  geom_hline(
-    yintercept = 1 / 3,
-    linetype = "dashed",
-    color = "grey15",
-    linewidth = 0.9
-  ) +
-  geom_hline(
-    yintercept = p_m1,
-    linetype = "dotted",
-    color = "grey45",
-    linewidth = 0.9
-  ) +
-  geom_ribbon(
-    data = prediction_m2,
-    aes(
-      x = 日付,
-      ymin = 信頼区間下限,
-      ymax = 信頼区間上限
-    ),
-    fill = "#56B4E9",
-    alpha = 0.22
-  ) +
-  geom_line(
-    data = prediction_m2,
-    aes(
-      x = 日付,
-      y = 推定確率
-    ),
-    color = "#0072B2",
-    linewidth = 1.5
-  ) +
-  geom_point(
-    data = monthly_slot2_article,
-    aes(
-      x = 表示日,
-      y = A出現割合
-    ),
-    color = "grey20",
-    fill = "white",
-    shape = 21,
-    stroke = 1.3,
-    size = 4
-  ) +
-  scale_x_date(
-    breaks = article_month_breaks,
-    labels = article_month_labels,
-    limits = c(
-      floor_date(
-        analysis_start_date,
-        unit = "month"
-      ),
-      ceiling_date(
-        analysis_end_date,
-        unit = "month"
-      ) - days(1)
-    ),
-    expand = expansion(
-      add = c(8, 8)
-    )
-  ) +
-  scale_y_continuous(
-    labels = scales::label_percent(
-      accuracy = 1
-    ),
-    breaks = seq(0, 0.5, by = 0.1),
-    expand = expansion(
-      mult = c(0, 0.03)
-    )
-  ) +
-  coord_cartesian(
-    ylim = c(-0.015, 0.5)
-  ) +
-  article_plot_theme() +
-  theme(
-    panel.grid.major.x = element_blank()
-  ) +
-  labs(
-    title = "2枠目Aの出現確率の滑らかな時間変化",
-    subtitle = "2食材種を含む360個体",
-    caption = paste0(
-      "青線：GAMの推定値　青帯：点ごとの95%信頼区間\n",
-      "黒点：月ごとの実測割合　｜　破線：通説値33.3%　",
-      "点線：一定モデル27.5%\n",
-      "2025年11月は16日から、2026年9月は5日までの途中集計"
-    ),
-    x = NULL,
-    y = "A出現確率",
-    size = NULL
-  )
-
-save_article_figure(
-  article_smooth_plot,
-  "slot2_smooth_time_change.png"
-)
-
-article_smooth_plot
-```
-
-青い信頼帯は各日についての点ごとの区間であり、
-曲線上の任意の時点を探索して判断するための同時信頼帯ではない。
-
-# 固定確率モデルと滑らかな時間変化モデルの比較
-
-## 日次Binomial尤度による適合度
-
-```{r}
-#| label: compare-m1-m2-fit
-
-model_fit_m1_m2 <- tibble(
-  モデル = c("M1", "M2"),
-  日次二項対数尤度 = c(
-    log_lik_m1,
-    log_lik_m2
-  ),
-  残差逸脱度 = c(
-    deviance(model_m1),
-    deviance(model_m2)
-  ),
-  モデル有効自由度 = c(
-    length(coef(model_m1)),
-    sum(model_m2$edf)
-  )
-)
-
-model_fit_m1_m2 %>%
-  knitr::kable(
-    digits = 4
-  )
-```
-
-$M_1$ から $M_2$ への逸脱度の改善量は
-`r sprintf("%.3f", lr_m1_m2)` である。
-ただし、平滑化パラメータをデータから選択しているため、
-この値を通常の自由度固定のカイ二乗分布だけで評価しない。
-
-## パラメトリック・ブートストラップ
-
-$M_1$ のもとで、元データと同じ観測日・日ごとの試行数を保ったデータを生成する。
-各反復で $M_1$ と $M_2$ の両方を当てはめ直し、
-$M_2$ の平滑化パラメータもREMLで再推定する。
-
-```{r}
-#| label: bootstrap-m1-m2
-
-bootstrap_repetitions_m2 <- 2000L
-bootstrap_seed_m2 <- 20260824L
-
-calculate_m1_m2_statistic <- function(
-  a_count,
-  trial_count,
-  elapsed_day
-) {
-  bootstrap_data <- tibble(
-    A出現数 = a_count,
-    B出現数 = trial_count - a_count,
-    試行数 = trial_count,
-    経過日 = elapsed_day
-  )
-
-  bootstrap_m1 <- glm(
-    cbind(A出現数, B出現数) ~ 1,
-    family = binomial(),
-    data = bootstrap_data
-  )
-
-  bootstrap_m2 <- gam(
-    cbind(A出現数, B出現数) ~
-      s(
-        経過日,
-        bs = "tp",
-        k = 10
-      ),
-    family = binomial(),
-    method = "REML",
-    data = bootstrap_data
-  )
-
-  bootstrap_log_lik_m1 <- daily_binomial_log_lik(
-    data = bootstrap_data,
-    prob = fitted(bootstrap_m1)
-  )
-
-  bootstrap_log_lik_m2 <- daily_binomial_log_lik(
-    data = bootstrap_data,
-    prob = fitted(bootstrap_m2)
-  )
-
-  2 * (
-    bootstrap_log_lik_m2 -
-      bootstrap_log_lik_m1
-  )
-}
-
-set.seed(bootstrap_seed_m2)
-
-bootstrap_statistic_m2 <- map_dbl(
-  seq_len(bootstrap_repetitions_m2),
-  function(i) {
-    simulated_a_count <- rbinom(
-      n = nrow(daily_m2_data),
-      size = daily_m2_data$試行数,
-      prob = p_m1
-    )
-
-    tryCatch(
-      calculate_m1_m2_statistic(
-        a_count = simulated_a_count,
-        trial_count = daily_m2_data$試行数,
-        elapsed_day = daily_m2_data$経過日
-      ),
-      error = function(e) {
-        NA_real_
-      }
-    )
-  }
-)
-
-valid_bootstrap_statistic_m2 <- bootstrap_statistic_m2[
-  is.finite(bootstrap_statistic_m2)
-]
-
-successful_bootstrap_m2 <- length(
-  valid_bootstrap_statistic_m2
-)
-
-stopifnot(
-  successful_bootstrap_m2 >=
-    0.99 * bootstrap_repetitions_m2
-)
-
-p_bootstrap_m1_m2 <- (
-  sum(
-    valid_bootstrap_statistic_m2 >=
-      lr_m1_m2
-  ) + 1
-) / (
-  successful_bootstrap_m2 + 1
-)
-
-mcse_bootstrap_m1_m2 <- sqrt(
-  p_bootstrap_m1_m2 *
-    (1 - p_bootstrap_m1_m2) /
-    (successful_bootstrap_m2 + 1)
-)
-```
-
-```{r}
-#| label: summarize-bootstrap-m1-m2
-
-bootstrap_summary_m1_m2 <- tibble(
-  観測された逸脱度改善量 = lr_m1_m2,
-  予定反復数 = bootstrap_repetitions_m2,
-  成功反復数 = successful_bootstrap_m2,
-  ブートストラップp値 = p_bootstrap_m1_m2,
-  Monte_Carlo標準誤差 = mcse_bootstrap_m1_m2
-)
-
-bootstrap_summary_m1_m2 %>%
-  knitr::kable(
-    digits = 4
-  )
-```
-
-今回の2,000反復で得られる精度はMonte Carlo標準誤差とともに評価する。
-最終記事でp値が判断境界に近い場合は、反復数を増やして再計算する。
-
-```{r}
-#| label: plot-bootstrap-m1-m2
-#| fig-cap: "M1のもとで得られたM2の逸脱度改善量。赤破線は実データで観測された改善量。"
-
-ggplot(
-  tibble(
-    逸脱度改善量 = valid_bootstrap_statistic_m2
-  ),
-  aes(
-    x = 逸脱度改善量
-  )
-) +
-  geom_histogram(
-    bins = 50,
-    fill = "grey70",
-    color = "white"
-  ) +
-  geom_vline(
-    xintercept = lr_m1_m2,
-    linetype = "dashed",
-    color = "firebrick",
-    linewidth = 1
-  ) +
-  theme_minimal(
-    base_family = "noto"
-  ) +
-  theme(
-    panel.grid.minor = element_blank()
-  ) +
-  labs(
-    title = "固定確率モデル下のGAM適合改善量",
-    subtitle = paste0(
-      "M1からシミュレーションし、各反復で平滑化を再推定"
-    ),
-    x = "M1からM2への逸脱度改善量",
-    y = "シミュレーション回数"
-  )
-```
-
-```{r}
-#| label: interpret-bootstrap-m1-m2
-#| include: false
-
-m2_interpretation <- if (
-  p_bootstrap_m1_m2 < 0.05
-) {
-  paste0(
-    "固定確率モデル $M_1$ のもとでは、実データと同程度以上の適合改善は得られにくく、",
-    "現在のデータには滑らかな時間変化を示唆する結果がある。"
-  )
-} else {
-  paste0(
-    "固定確率モデル $M_1$ のもとでも、実データと同程度以上の適合改善は十分に生じ得る。",
-    "現在のデータからは、滑らかな時間変化が必要だとする明確な結果は得られていない。"
-  )
-}
-```
-
-ブートストラップp値は `r format_p(p_bootstrap_m1_m2)`、
-Monte Carlo標準誤差は `r sprintf("%.4f", mcse_bootstrap_m1_m2)` である。
-`r m2_interpretation`
-
-これは、滑らかな時間変化モデルが真であることを証明する結果ではない。
-また、時系列グラフを見たことをきっかけに今回の分析テーマを選んだという、
-分析全体の探索性までブートストラップで解消できるわけではない。
-
-# 第2段階までのまとめ
-
-この段階では、$M_0$、$M_1$、$M_2$ のすべてについて、
-観測日ごとのBinomial尤度を使用した。
-
-- $M_1$ は `cbind(A出現数, B出現数) ~ 1` として推定した
-- 集約単位を変えても、$M_1$ の推定確率、exact test、$M_0$ 対 $M_1$ の尤度比が変わらないことを確認した
-- $M_2$ は、基底次元を固定した二項GAMとして推定した
-- $M_1$ 対 $M_2$ は、平滑化の再推定を含むパラメトリック・ブートストラップで比較した
-
-次節では未知の変化点モデル $M_3$ を実装する。
-
-# 未知の変化点モデル
-
-## モデル
-
-1つの未知の変化点を持つモデルを、次のように定義する。
+境界が未知の1変化点モデルを、次のように定義する。
 
 $$
 M_3:
@@ -2002,7 +1303,7 @@ save_article_figure(
 article_change_point_plot
 ```
 
-# 固定確率モデルと未知の変化点モデルの比較
+# 一定モデルと1変化点モデルの比較
 
 ## パラメトリック・ブートストラップ
 
@@ -2366,9 +1667,9 @@ stopifnot(
 )
 ```
 
-# 第3段階のまとめ
+# 第2段階までのまとめ
 
-この段階では、$M_1$ と未知の1変化点モデル $M_3$ を、
+この段階では、$M_1$ と1変化点モデル $M_3$ を、
 同じ観測日ごとのBinomial尤度で比較した。
 
 - 変化点候補は連続する観測日の間に限定した
@@ -2376,14 +1677,535 @@ stopifnot(
 - 各候補で前後のA確率を最尤推定し、尤度比プロファイルを作成した
 - 各ブートストラップ反復でも同じ候補をすべて再探索した
 
-ここでは、$M_2$ と $M_3$ のどちらの形がよりもっともらしいかは直接比較していない。
+次節では、急な切り替わりではなく、滑らかな時間変化を仮定したモデル $M_2$ を調べる。
+$M_2$ と $M_3$ のどちらの形がよりもっともらしいかは直接比較しない。
 
-# 第4段階：未知の変化点検定の検出力
+# 滑らかな時間変化モデル
+
+## モデル
+
+滑らかな時間変化モデルを、二項GAMとして定義する。
+
+$$
+M_2:
+A_d \sim \operatorname{Binomial}(n_d,p_d),
+\qquad
+\operatorname{logit}(p_d)=\beta_0+f(t_d)
+$$
+
+$f(t)$ にはthin plate regression splineを使用する。
+基底次元は $k=10$ に固定し、平滑化パラメータはREMLで推定する。
+低下方向や単調性は仮定しない。
+
+```{r}
+#| label: fit-smooth-model
+
+daily_m2_data <- daily_slot2 %>%
+  mutate(
+    経過日 = as.integer(
+      日付 - min(日付)
+    )
+  )
+
+basis_dimension_m2 <- 10L
+
+model_m2 <- gam(
+  cbind(A出現数, B出現数) ~
+    s(
+      経過日,
+      bs = "tp",
+      k = 10
+    ),
+  family = binomial(),
+  method = "REML",
+  data = daily_m2_data
+)
+
+log_lik_m2 <- daily_binomial_log_lik(
+  data = daily_m2_data,
+  prob = fitted(model_m2)
+)
+
+lr_m1_m2 <- 2 * (
+  log_lik_m2 - log_lik_m1
+)
+
+deviance_improvement_m2 <-
+  deviance(model_m1) -
+    deviance(model_m2)
+
+stopifnot(
+  isTRUE(
+    all.equal(
+      lr_m1_m2,
+      deviance_improvement_m2,
+      tolerance = 1e-8
+    )
+  )
+)
+```
+
+## 推定結果
+
+```{r}
+#| label: summarize-smooth-model
+
+summary_m2 <- summary(model_m2)
+smooth_table_m2 <- summary_m2$s.table
+
+m2_smooth_summary <- tibble(
+  平滑項 = rownames(smooth_table_m2),
+  基底次元 = basis_dimension_m2,
+  有効自由度 = unname(
+    smooth_table_m2[, "edf"]
+  ),
+  参照自由度 = unname(
+    smooth_table_m2[, "Ref.df"]
+  ),
+  近似Chi二乗 = unname(
+    smooth_table_m2[, "Chi.sq"]
+  ),
+  近似p値 = unname(
+    smooth_table_m2[, "p-value"]
+  )
+)
+
+m2_smooth_edf <- m2_smooth_summary$有効自由度[[1]]
+
+m2_smooth_summary %>%
+  knitr::kable(
+    digits = 4
+  )
+```
+
+平滑項の有効自由度は `r sprintf("%.3f", m2_smooth_edf)` である。
+`r if (m2_smooth_edf < 1.1) "現在選択された曲線はlogitスケール上でほぼ直線であり、強い曲率は推定されていない。" else "現在選択された曲線には、logitスケール上で直線では表せない曲率が含まれている。"`
+
+上表のp値はGAMの通常の近似検定による参考値である。
+平滑化の選択を含めた主な比較には、後述するパラメトリック・ブートストラップを使用する。
+
+```{r}
+#| label: check-smooth-basis
+
+set.seed(20260824)
+
+k_check_m2 <- k.check(
+  model_m2,
+  n.rep = 1000
+) %>%
+  as.data.frame() %>%
+  rownames_to_column(
+    var = "平滑項"
+  ) %>%
+  as_tibble()
+
+k_check_m2 %>%
+  knitr::kable(
+    digits = 4
+  )
+```
+
+`k-index` は、指定した基底次元が小さすぎないかを確認するための診断である。
+この診断も確証的な検定としてではなく、モデル設定の点検に使用する。
+
+## 推定された時間変化
+
+```{r}
+#| label: predict-smooth-model
+
+prediction_m2 <- tibble(
+  日付 = seq(
+    min(daily_m2_data$日付),
+    max(daily_m2_data$日付),
+    by = "day"
+  )
+) %>%
+  mutate(
+    経過日 = as.integer(
+      日付 - min(daily_m2_data$日付)
+    )
+  )
+
+prediction_link_m2 <- predict(
+  model_m2,
+  newdata = prediction_m2,
+  type = "link",
+  se.fit = TRUE,
+  unconditional = TRUE
+)
+
+prediction_m2 <- prediction_m2 %>%
+  mutate(
+    link = as.numeric(
+      prediction_link_m2$fit
+    ),
+    link_se = as.numeric(
+      prediction_link_m2$se.fit
+    ),
+    推定確率 = plogis(link),
+    信頼区間下限 = plogis(
+      link - qnorm(0.975) * link_se
+    ),
+    信頼区間上限 = plogis(
+      link + qnorm(0.975) * link_se
+    )
+  )
+```
+
+```{r}
+#| label: plot-smooth-model
+#| fig-cap: "M2で推定した時間変化と点ごとの95%信頼区間。月次の点と誤差棒は記述的な補助表示である。"
+
+article_smooth_plot <- ggplot() +
+  geom_hline(
+    yintercept = 1 / 3,
+    linetype = "dashed",
+    color = "grey15",
+    linewidth = 0.9
+  ) +
+  geom_hline(
+    yintercept = p_m1,
+    linetype = "dotted",
+    color = "grey45",
+    linewidth = 0.9
+  ) +
+  geom_ribbon(
+    data = prediction_m2,
+    aes(
+      x = 日付,
+      ymin = 信頼区間下限,
+      ymax = 信頼区間上限
+    ),
+    fill = "#56B4E9",
+    alpha = 0.22
+  ) +
+  geom_line(
+    data = prediction_m2,
+    aes(
+      x = 日付,
+      y = 推定確率
+    ),
+    color = "#0072B2",
+    linewidth = 1.5
+  ) +
+  geom_point(
+    data = monthly_slot2_article,
+    aes(
+      x = 表示日,
+      y = A出現割合
+    ),
+    color = "grey20",
+    fill = "white",
+    shape = 21,
+    stroke = 1.3,
+    size = 4
+  ) +
+  scale_x_date(
+    breaks = article_month_breaks,
+    labels = article_month_labels,
+    limits = c(
+      floor_date(
+        analysis_start_date,
+        unit = "month"
+      ),
+      ceiling_date(
+        analysis_end_date,
+        unit = "month"
+      ) - days(1)
+    ),
+    expand = expansion(
+      add = c(8, 8)
+    )
+  ) +
+  scale_y_continuous(
+    labels = scales::label_percent(
+      accuracy = 1
+    ),
+    breaks = seq(0, 0.5, by = 0.1),
+    expand = expansion(
+      mult = c(0, 0.03)
+    )
+  ) +
+  coord_cartesian(
+    ylim = c(-0.015, 0.5)
+  ) +
+  article_plot_theme() +
+  theme(
+    panel.grid.major.x = element_blank()
+  ) +
+  labs(
+    title = "2枠目Aの出現確率の滑らかな時間変化",
+    subtitle = "2食材種を含む360個体",
+    caption = paste0(
+      "青線：GAMの推定値　青帯：点ごとの95%信頼区間\n",
+      "黒点：月ごとの実測割合　｜　破線：通説値33.3%　",
+      "点線：一定モデル27.5%\n",
+      "2025年11月は16日から、2026年9月は5日までの途中集計"
+    ),
+    x = NULL,
+    y = "A出現確率",
+    size = NULL
+  )
+
+save_article_figure(
+  article_smooth_plot,
+  "slot2_smooth_time_change.png"
+)
+
+article_smooth_plot
+```
+
+青い信頼帯は各日についての点ごとの区間であり、
+曲線上の任意の時点を探索して判断するための同時信頼帯ではない。
+
+# 固定確率モデルと滑らかな時間変化モデルの比較
+
+## 日次Binomial尤度による適合度
+
+```{r}
+#| label: compare-m1-m2-fit
+
+model_fit_m1_m2 <- tibble(
+  モデル = c("M1", "M2"),
+  日次二項対数尤度 = c(
+    log_lik_m1,
+    log_lik_m2
+  ),
+  残差逸脱度 = c(
+    deviance(model_m1),
+    deviance(model_m2)
+  ),
+  モデル有効自由度 = c(
+    length(coef(model_m1)),
+    sum(model_m2$edf)
+  )
+)
+
+model_fit_m1_m2 %>%
+  knitr::kable(
+    digits = 4
+  )
+```
+
+$M_1$ から $M_2$ への逸脱度の改善量は
+`r sprintf("%.3f", lr_m1_m2)` である。
+ただし、平滑化パラメータをデータから選択しているため、
+この値を通常の自由度固定のカイ二乗分布だけで評価しない。
+
+## パラメトリック・ブートストラップ
+
+$M_1$ のもとで、元データと同じ観測日・日ごとの試行数を保ったデータを生成する。
+各反復で $M_1$ と $M_2$ の両方を当てはめ直し、
+$M_2$ の平滑化パラメータもREMLで再推定する。
+
+```{r}
+#| label: bootstrap-m1-m2
+
+bootstrap_repetitions_m2 <- 2000L
+bootstrap_seed_m2 <- 20260824L
+
+calculate_m1_m2_statistic <- function(
+  a_count,
+  trial_count,
+  elapsed_day
+) {
+  bootstrap_data <- tibble(
+    A出現数 = a_count,
+    B出現数 = trial_count - a_count,
+    試行数 = trial_count,
+    経過日 = elapsed_day
+  )
+
+  bootstrap_m1 <- glm(
+    cbind(A出現数, B出現数) ~ 1,
+    family = binomial(),
+    data = bootstrap_data
+  )
+
+  bootstrap_m2 <- gam(
+    cbind(A出現数, B出現数) ~
+      s(
+        経過日,
+        bs = "tp",
+        k = 10
+      ),
+    family = binomial(),
+    method = "REML",
+    data = bootstrap_data
+  )
+
+  bootstrap_log_lik_m1 <- daily_binomial_log_lik(
+    data = bootstrap_data,
+    prob = fitted(bootstrap_m1)
+  )
+
+  bootstrap_log_lik_m2 <- daily_binomial_log_lik(
+    data = bootstrap_data,
+    prob = fitted(bootstrap_m2)
+  )
+
+  2 * (
+    bootstrap_log_lik_m2 -
+      bootstrap_log_lik_m1
+  )
+}
+
+set.seed(bootstrap_seed_m2)
+
+bootstrap_statistic_m2 <- map_dbl(
+  seq_len(bootstrap_repetitions_m2),
+  function(i) {
+    simulated_a_count <- rbinom(
+      n = nrow(daily_m2_data),
+      size = daily_m2_data$試行数,
+      prob = p_m1
+    )
+
+    tryCatch(
+      calculate_m1_m2_statistic(
+        a_count = simulated_a_count,
+        trial_count = daily_m2_data$試行数,
+        elapsed_day = daily_m2_data$経過日
+      ),
+      error = function(e) {
+        NA_real_
+      }
+    )
+  }
+)
+
+valid_bootstrap_statistic_m2 <- bootstrap_statistic_m2[
+  is.finite(bootstrap_statistic_m2)
+]
+
+successful_bootstrap_m2 <- length(
+  valid_bootstrap_statistic_m2
+)
+
+stopifnot(
+  successful_bootstrap_m2 >=
+    0.99 * bootstrap_repetitions_m2
+)
+
+p_bootstrap_m1_m2 <- (
+  sum(
+    valid_bootstrap_statistic_m2 >=
+      lr_m1_m2
+  ) + 1
+) / (
+  successful_bootstrap_m2 + 1
+)
+
+mcse_bootstrap_m1_m2 <- sqrt(
+  p_bootstrap_m1_m2 *
+    (1 - p_bootstrap_m1_m2) /
+    (successful_bootstrap_m2 + 1)
+)
+```
+
+```{r}
+#| label: summarize-bootstrap-m1-m2
+
+bootstrap_summary_m1_m2 <- tibble(
+  観測された逸脱度改善量 = lr_m1_m2,
+  予定反復数 = bootstrap_repetitions_m2,
+  成功反復数 = successful_bootstrap_m2,
+  ブートストラップp値 = p_bootstrap_m1_m2,
+  Monte_Carlo標準誤差 = mcse_bootstrap_m1_m2
+)
+
+bootstrap_summary_m1_m2 %>%
+  knitr::kable(
+    digits = 4
+  )
+```
+
+今回の2,000反復で得られる精度はMonte Carlo標準誤差とともに評価する。
+最終記事でp値が判断境界に近い場合は、反復数を増やして再計算する。
+
+```{r}
+#| label: plot-bootstrap-m1-m2
+#| fig-cap: "M1のもとで得られたM2の逸脱度改善量。赤破線は実データで観測された改善量。"
+
+ggplot(
+  tibble(
+    逸脱度改善量 = valid_bootstrap_statistic_m2
+  ),
+  aes(
+    x = 逸脱度改善量
+  )
+) +
+  geom_histogram(
+    bins = 50,
+    fill = "grey70",
+    color = "white"
+  ) +
+  geom_vline(
+    xintercept = lr_m1_m2,
+    linetype = "dashed",
+    color = "firebrick",
+    linewidth = 1
+  ) +
+  theme_minimal(
+    base_family = "noto"
+  ) +
+  theme(
+    panel.grid.minor = element_blank()
+  ) +
+  labs(
+    title = "固定確率モデル下のGAM適合改善量",
+    subtitle = paste0(
+      "M1からシミュレーションし、各反復で平滑化を再推定"
+    ),
+    x = "M1からM2への逸脱度改善量",
+    y = "シミュレーション回数"
+  )
+```
+
+```{r}
+#| label: interpret-bootstrap-m1-m2
+#| include: false
+
+m2_interpretation <- if (
+  p_bootstrap_m1_m2 < 0.05
+) {
+  paste0(
+    "固定確率モデル $M_1$ のもとでは、実データと同程度以上の適合改善は得られにくく、",
+    "現在のデータには滑らかな時間変化を示唆する結果がある。"
+  )
+} else {
+  paste0(
+    "固定確率モデル $M_1$ のもとでも、実データと同程度以上の適合改善は十分に生じ得る。",
+    "現在のデータからは、滑らかな時間変化が必要だとする明確な結果は得られていない。"
+  )
+}
+```
+
+ブートストラップp値は `r format_p(p_bootstrap_m1_m2)`、
+Monte Carlo標準誤差は `r sprintf("%.4f", mcse_bootstrap_m1_m2)` である。
+`r m2_interpretation`
+
+これは、滑らかな時間変化モデルが真であることを証明する結果ではない。
+また、時系列グラフを見たことをきっかけに今回の分析テーマを選んだという、
+分析全体の探索性までブートストラップで解消できるわけではない。
+
+# 第3段階までのまとめ
+
+この段階では、一定モデル $M_1$ と滑らかな時間変化モデル $M_2$ を、
+観測日ごとのBinomial尤度で比較した。
+
+- $M_1$ は `cbind(A出現数, B出現数) ~ 1` として推定した
+- $M_2$ は、基底次元を固定した二項GAMとして推定した
+- $M_1$ 対 $M_2$ は、平滑化の再推定を含むパラメトリック・ブートストラップで比較した
+
+次節では、1変化点モデルを一定モデルと比較する検定の検出力を評価する。
+
+# 第4段階：1変化点検定の検出力
 
 ## 目的と解釈上の注意
 
 ここでは、実際に1回の確率変化が存在したと仮定したとき、
-現在の `r n_slot2` 観測と第3段階の検定手順で、
+現在の `r n_slot2` 観測と第2段階の検定手順で、
 その変化をどの程度検出できるかをsimulationで評価する。
 
 この検出力分析は、次の点に注意して解釈する。
@@ -2396,12 +2218,12 @@ stopifnot(
 
 検出力simulationでも、観測日、日ごとの試行数、
 `r nrow(change_point_candidates_m3)` 個の候補変化点、
-各候補での最尤推定、最大尤度比統計量の計算を第3段階と同じにする。
+各候補での最尤推定、最大尤度比統計量の計算を第2段階と同じにする。
 真の変化点はデータ生成にだけ使用し、検定アルゴリズムには与えない。
 
 ## 棄却臨界値
 
-第3段階で $M_1$ から生成した最大尤度比統計量の95%点を、
+第2段階で $M_1$ から生成した最大尤度比統計量の95%点を、
 有意水準5%の棄却臨界値とする。
 
 $$
@@ -2467,7 +2289,7 @@ $$
 
 ## 共通の検出力simulation関数
 
-第3段階の `calculate_max_m1_m3_statistic()` をそのまま検定統計量の計算に使用する。
+第2段階の `calculate_max_m1_m3_statistic()` をそのまま検定統計量の計算に使用する。
 
 ```{r}
 #| label: define-m3-power-function
@@ -3348,3 +3170,185 @@ save_article_figure(
 
 article_six_pattern_plot
 ```
+
+# 補足：Part 1の通説値との比較
+
+本記事の主分析では一定モデル $M_1$ を基準としたが、
+Part 1との接続を確認するため、通説値 $p=1/3$ に固定したモデル $M_0$ との比較も示す。
+
+$$
+M_0: A_d \sim \operatorname{Binomial}\left(n_d,\frac{1}{3}\right)
+$$
+
+## 通説値と一定モデルの比較
+
+```{r}
+#| label: fit-part1-reference-model
+
+log_lik_m0 <- daily_binomial_log_lik(
+  data = daily_slot2,
+  prob = 1 / 3
+)
+
+lr_m0_m1 <- 2 * (
+  log_lik_m1 - log_lik_m0
+)
+
+p_lr_m0_m1 <- pchisq(
+  lr_m0_m1,
+  df = 1,
+  lower.tail = FALSE
+)
+
+binom_m0 <- binom.test(
+  x = x_slot2_A,
+  n = n_slot2,
+  p = 1 / 3,
+  alternative = "two.sided"
+)
+
+# 全試行を1個のBinomial観測として集約した場合とも比較する。
+# 絶対的な対数尤度は二項係数が異なるため一致しないが、
+# M0とM1の尤度比ではその差が相殺される。
+p_m1_all_in_one <- x_slot2_A / n_slot2
+
+log_lik_m0_all_in_one <- dbinom(
+  x = x_slot2_A,
+  size = n_slot2,
+  prob = 1 / 3,
+  log = TRUE
+)
+
+log_lik_m1_all_in_one <- dbinom(
+  x = x_slot2_A,
+  size = n_slot2,
+  prob = p_m1_all_in_one,
+  log = TRUE
+)
+
+lr_m0_m1_all_in_one <- 2 * (
+  log_lik_m1_all_in_one -
+    log_lik_m0_all_in_one
+)
+
+binom_m0_from_daily_totals <- binom.test(
+  x = sum(daily_slot2$A出現数),
+  n = sum(daily_slot2$試行数),
+  p = 1 / 3,
+  alternative = "two.sided"
+)
+
+stopifnot(
+  isTRUE(
+    all.equal(
+      p_m1,
+      p_m1_all_in_one,
+      tolerance = 1e-12
+    )
+  ),
+  isTRUE(
+    all.equal(
+      binom_m0$p.value,
+      binom_m0_from_daily_totals$p.value,
+      tolerance = 1e-12
+    )
+  ),
+  isTRUE(
+    all.equal(
+      lr_m0_m1,
+      lr_m0_m1_all_in_one,
+      tolerance = 1e-10
+    )
+  )
+)
+```
+
+```{r}
+#| label: compare-fixed-models
+
+fixed_model_comparison <- tibble(
+  A出現数 = x_slot2_A,
+  総試行数 = n_slot2,
+  A実測割合 = x_slot2_A / n_slot2,
+  正確二項検定p値 = binom_m0$p.value,
+  尤度比統計量 = lr_m0_m1,
+  尤度比検定p値 = p_lr_m0_m1
+)
+
+fixed_model_comparison %>%
+  mutate(
+    A実測割合 = scales::percent(
+      A実測割合,
+      accuracy = 0.1
+    )
+  ) %>%
+  knitr::kable(
+    digits = 4
+  )
+```
+
+## 集約単位を変更しても変わらない量
+
+```{r}
+#| label: check-likelihood-aggregation
+
+likelihood_aggregation_check <- tibble(
+  計算方法 = c(
+    "全試行を1個のBinomial観測として集約",
+    "観測日ごとのBinomial観測"
+  ),
+  M1推定確率 = c(
+    p_m1_all_in_one,
+    p_m1
+  ),
+  正確二項検定p値 = c(
+    binom_m0$p.value,
+    binom_m0_from_daily_totals$p.value
+  ),
+  M0対M1尤度比統計量 = c(
+    lr_m0_m1_all_in_one,
+    lr_m0_m1
+  )
+)
+
+likelihood_aggregation_check %>%
+  mutate(
+    M1推定確率 = scales::percent(
+      M1推定確率,
+      accuracy = 0.1
+    )
+  ) %>%
+  knitr::kable(
+    digits = 6
+  )
+```
+
+Binomial観測のまとめ方を変えると、二項係数が変わるため、
+$M_0$ と $M_1$ それぞれの絶対的な対数尤度は変化する。
+一方、同じ集約単位で計算した2モデル間の尤度比では二項係数が相殺される。
+そのため、$M_1$ の推定確率、正確二項検定、尤度比統計量は変わらない。
+
+```{r}
+#| label: fixed-model-interpretation
+#| include: false
+
+m0_interpretation <- if (
+  binom_m0$p.value < 0.05
+) {
+  paste0(
+    "通常の5%有意水準では、固定確率 $p=1/3$ という帰無仮説は棄却される。"
+  )
+} else {
+  paste0(
+    "通常の5%有意水準では、固定確率 $p=1/3$ という帰無仮説は棄却されない。"
+  )
+}
+```
+
+正確二項検定のp値は `r format_p(binom_m0$p.value)` である。
+`r m0_interpretation`
+
+ただし、この比較で分かるのは、全期間を一つの固定確率としてまとめたときに、
+$1/3$ と整合的かどうかである。
+$M_1$ の方が $M_0$ より適合しても、出現確率が時間を通じて一定であることを
+示したことにはならない。
